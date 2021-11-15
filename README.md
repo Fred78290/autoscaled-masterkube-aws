@@ -1,6 +1,6 @@
 # Introduction
 
-This directory contains everthing to create an autoscaled cluster with vSphere.
+This directory contains everthing to create an autoscaled cluster with AWS.
 
 ## Prerequistes
 
