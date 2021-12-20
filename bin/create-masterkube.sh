@@ -63,13 +63,13 @@ export SEED_IMAGE_ARM64="ami-09e0d6fdf60750e33"
 
 # defined in private aws.defs
 export AWSDEFS=${CURDIR}/aws.defs
-export MASTER_INSTANCE_PROFILE_ARN="<to be filled>"
-export WORKER_INSTANCE_PROFILE_ARN="<to be filled>"
-export VPC_PUBLIC_SUBNET_ID="<to be filled>"
-export VPC_PUBLIC_SECURITY_GROUPID="<to be filled>"
-export VPC_PRIVATE_SUBNET_ID="<to be filled>"
-export VPC_PRIVATE_SECURITY_GROUPID="<to be filled>"
-export ROUTE53_ZONEID="<to be filled>"
+export MASTER_INSTANCE_PROFILE_ARN= #"<to be filled>"
+export WORKER_INSTANCE_PROFILE_ARN= #"<to be filled>"
+export VPC_PUBLIC_SUBNET_ID= #"<to be filled>"
+export VPC_PUBLIC_SECURITY_GROUPID= #"<to be filled>"
+export VPC_PRIVATE_SUBNET_ID= #"<to be filled>"
+export VPC_PRIVATE_SECURITY_GROUPID= #"<to be filled>"
+export ROUTE53_ZONEID= #"<to be filled>"
 
 export EXPOSE_PUBLIC_CLUSTER=true
 export CONTROLPLANE_USE_PUBLICIP=true
