@@ -11,6 +11,8 @@ NODEINDEX=0
 MASTER_NODE_ALLOW_DEPLOYMENT=NO
 LOCALHOSTNAME=$(curl -s http://169.254.169.254/latest/meta-data/local-hostname)
 INSTANCEID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+REGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)
+INSTANCENAME=$(aws ec2  describe-instances --region $REGION --instance-ids $INSTANCEID | jq -r '.Reservations[0].Instances[0].Tags[]|select(.Key == "Name")|.Value')
 IPADDR=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
 
 MASTER_IP=$(cat ./cluster/manager-ip)
@@ -46,6 +48,10 @@ while true; do
         ;;
     --join-master)
         MASTER_IP=$2
+        shift 2
+        ;;
+    -g|--node-group)
+        NODEGROUP_NAME="$2"
         shift 2
         ;;
     --allow-deployment)
@@ -143,7 +149,7 @@ fi
 kubectl annotate node ${NODENAME} \
     "cluster.autoscaler.nodegroup/name=${NODEGROUP_NAME}" \
     "cluster.autoscaler.nodegroup/instance-id=${INSTANCEID}" \
-    "cluster.autoscaler.nodegroup/instance-name=${NODENAME}" \
+    "cluster.autoscaler.nodegroup/instance-name=${INSTANCENAME}" \
     "cluster.autoscaler.nodegroup/node-index=${NODEINDEX}" \
     "cluster.autoscaler.nodegroup/autoprovision=false" \
     "cluster-autoscaler.kubernetes.io/scale-down-disabled=true" \

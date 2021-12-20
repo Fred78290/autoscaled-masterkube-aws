@@ -12,6 +12,8 @@ export NODEGROUP_NAME="aws-ca-k8s"
 export IPADDR=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
 export LOCALHOSTNAME=$(curl -s http://169.254.169.254/latest/meta-data/local-hostname)
 export INSTANCEID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+export REGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)
+export INSTANCENAME=$(aws ec2  describe-instances --region $REGION --instance-ids $INSTANCEID | jq -r '.Reservations[0].Instances[0].Tags[]|select(.Key == "Name")|.Value')
 export AWS_DOMAIN=${LOCALHOSTNAME#*.*}
 export MAC_ADDRESS="$(curl -s http://169.254.169.254/latest/meta-data/mac)"
 export SUBNET_IPV4_CIDR_BLOCK=$(curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/${MAC_ADDRESS}/subnet-ipv4-cidr-block)
@@ -174,7 +176,11 @@ if [ -f /etc/kubernetes/kubelet.conf ]; then
     echo "Already installed k8s master node"
 fi
 
-source /etc/default/kubelet
+if [ -e /etc/default/kubelet ]; then
+  source /etc/default/kubelet
+else
+  touch /etc/default/kubelet
+fi
 
 systemctl restart kubelet
 
@@ -490,7 +496,7 @@ kubectl label nodes ${NODENAME} "cluster.autoscaler.nodegroup/name=${NODEGROUP_N
 kubectl annotate node ${NODENAME} \
   "cluster.autoscaler.nodegroup/name=${NODEGROUP_NAME}" \
   "cluster.autoscaler.nodegroup/instance-id=${INSTANCEID}" \
-  "cluster.autoscaler.nodegroup/instance-name=${NODENAME}" \
+  "cluster.autoscaler.nodegroup/instance-name=${INSTANCENAME}" \
   "cluster.autoscaler.nodegroup/node-index=${NODEINDEX}" \
   "cluster.autoscaler.nodegroup/autoprovision=false" \
   "cluster-autoscaler.kubernetes.io/scale-down-disabled=true" \
