@@ -287,7 +287,14 @@ while true; do
         WORKERNODES=$2
         shift 2
         ;;
-
+    --volume-size)
+        VOLUME_SIZE=$2
+        shift 2
+        ;;
+    --volume-type)
+        VOLUME_TYPE=$2
+        shift 2
+        ;;
     --internet-facing)
         EXPOSE_PUBLIC_CLUSTER=true
         shift 1
@@ -857,6 +864,7 @@ export TARGET_IMAGE=${TARGET_IMAGE}
 export TRANSPORT=${TRANSPORT}
 export UNREMOVABLENODERECHECKTIMEOUT=${UNREMOVABLENODERECHECKTIMEOUT}
 export USE_NLB=${USE_NLB}
+export VOLUME_TYPE=${VOLUME_TYPE}
 export VOLUME_SIZE=${VOLUME_SIZE}
 export EXPOSE_PUBLIC_CLUSTER=${EXPOSE_PUBLIC_CLUSTER}
 export CONTROLPLANE_USE_PUBLICIP=${CONTROLPLANE_USE_PUBLICIP}
@@ -973,7 +981,7 @@ EOF
             "DeviceName": "/dev/sda1",
             "Ebs": {
                 "DeleteOnTermination": true,
-                "VolumeType": "standard",
+                "VolumeType": "${VOLUME_TYPE}",
                 "VolumeSize": ${VOLUME_SIZE},
                 "Encrypted": false
             }
