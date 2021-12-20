@@ -557,12 +557,10 @@ export SSH_KEY=$(cat "${SSH_PUBLIC_KEY}")
 
 # If we use AWS CNI, install eni-max-pods.txt definition file
 if [ ${CNI_PLUGIN} = "aws" ]; then
-    AWS_MAX_PODS=$(curl -s "https://raw.githubusercontent.com/awslabs/amazon-eks-ami/master/files/eni-max-pods.txt" | grep ^${DEFAULT_MACHINE} | awk '{print $2}')
+    MAX_PODS=$(curl -s "https://raw.githubusercontent.com/awslabs/amazon-eks-ami/master/files/eni-max-pods.txt" | grep ^${DEFAULT_MACHINE} | awk '{print $2}')
 
-    if [ -z "${AWS_MAX_PODS}" ]; then
-        echo "No entry for ${DEFAULT_MACHINE} in eni-max-pods.txt. Not setting ${MAX_PODS} max pods for kubelet"
-    else
-        MAX_PODS=${AWS_MAX_PODS}
+    if [ -z "${MAX_PODS}" ]; then
+        echo_red "No entry for ${DEFAULT_MACHINE} in eni-max-pods.txt. Not setting ${MAX_PODS} max pods for kubelet"
     fi
 fi
 
