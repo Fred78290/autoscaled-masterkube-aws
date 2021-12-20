@@ -46,7 +46,7 @@ function get_ecs_container_account_for_region () {
     us-gov-west-1)
         echo "013241004608";;
     us-gov-east-1)
-        echo "151742754352}";;
+        echo "151742754352";;
     *)
         echo "602401143452";;
     esac
