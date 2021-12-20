@@ -3,7 +3,7 @@
 set -e
 
 KUBERNETES_VERSION=$(curl -sSL https://dl.k8s.io/release/stable.txt)
-CNI_PLUGIN_VERSION=v1.0.4
+CNI_PLUGIN_VERSION=v1.0.1
 CNI_PLUGIN=aws
 CACHE=~/.local/aws/cache
 OSDISTRO=$(uname -s)
