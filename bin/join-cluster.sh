@@ -8,6 +8,7 @@ CLUSTER_DIR=/etc/cluster
 HA_CLUSTER=
 EXTERNAL_ETCD=NO
 NODEINDEX=0
+MASTER_NODE_ALLOW_DEPLOYMENT=NO
 LOCALHOSTNAME=$(curl -s http://169.254.169.254/latest/meta-data/local-hostname)
 INSTANCEID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
 IPADDR=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
@@ -16,7 +17,7 @@ MASTER_IP=$(cat ./cluster/manager-ip)
 TOKEN=$(cat ./cluster/token)
 CACERT=$(cat ./cluster/ca.cert)
 
-TEMP=$(getopt -o c:i:g:p: --long join-master:,cloud-provider:,node-index:,use-external-etcd:,control-plane:,node-group:,provider-id:, -n "$0" -- "$@")
+TEMP=$(getopt -o c:i:g: --long allow-deployment:,join-master:,cloud-provider:,node-index:,use-external-etcd:,control-plane:,node-group: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -45,6 +46,10 @@ while true; do
         ;;
     --join-master)
         MASTER_IP=$2
+        shift 2
+        ;;
+    --allow-deployment)
+        MASTER_NODE_ALLOW_DEPLOYMENT=$2 
         shift 2
         ;;
     --)
@@ -123,6 +128,10 @@ if [ "$HA_CLUSTER" = "true" ]; then
         "node-role.kubernetes.io/master=" \
         "master=true" \
         --overwrite
+
+    if [ "${MASTER_NODE_ALLOW_DEPLOYMENT}" = "YES" ];then
+        kubectl taint node ${NODENAME} node-role.kubernetes.io/master:NoSchedule-
+    fi
 else
     kubectl label nodes ${NODENAME} \
         "cluster.autoscaler.nodegroup/name=${NODEGROUP_NAME}" \

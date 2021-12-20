@@ -47,7 +47,7 @@ else
 	ARCH="amd64"
 fi
 
-TEMP=$(getopt -o xh:i:p:n:c:k:s: --long container-runtime:,trace,control-plane-endpoint:,provider-id:,use-external-etcd:,cluster-nodes:,load-balancer-ip:,ha-cluster:,node-index:,private-zone-id:,private-zone-name:,cloud-provider:,max-pods:,node-group:,cert-extra-sans:,cni-plugin:,kubernetes-version: -n "$0" -- "$@")
+TEMP=$(getopt -o xh:i:p:n:c:k:s: --long ecr-password:,allow-deployment:,container-runtime:,trace,control-plane-endpoint:,use-external-etcd:,cluster-nodes:,load-balancer-ip:,ha-cluster:,node-index:,private-zone-id:,private-zone-name:,cloud-provider:,max-pods:,node-group:,cert-extra-sans:,cni-plugin:,kubernetes-version: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -72,6 +72,10 @@ while true; do
         ;;
     --ecr-password)
         ECR_PASSWORD=$2
+        shift 2
+        ;;
+    --allow-deployment)
+        MASTER_NODE_ALLOW_DEPLOYMENT=$2
         shift 2
         ;;
 
@@ -491,6 +495,10 @@ kubectl annotate node ${NODENAME} \
   "cluster.autoscaler.nodegroup/autoprovision=false" \
   "cluster-autoscaler.kubernetes.io/scale-down-disabled=true" \
   --overwrite
+
+if [ ${MASTER_NODE_ALLOW_DEPLOYMENT} = "YES" ];then
+  kubectl taint node ${NODENAME} node-role.kubernetes.io/master:NoSchedule-
+fi
 
 sed -i -e "/${CONTROL_PLANE_ENDPOINT%%.}/d" /etc/hosts
 
