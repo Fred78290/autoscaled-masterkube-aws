@@ -163,8 +163,11 @@ Options are:
 --help | -h                                      # Display usage
 --verbose | -v                                   # Verbose
 --resume | -r                                    # Allow resume interrupted creation of cluster kubernetes
+--trace | -x                                     # Trace execution
+--create-image-only                              # Create image only
 
 ### Flags to set AWS informations
+
 --profile | -p=<value>                           # Specify AWS profile, default ${AWS_PROFILE}
 --route53-profile=<value>                        # Specify AWS profile for route53, default ${AWS_PROFILE_ROUTE53}
 --region | -r=<value>                            # Specify AWS region, default ${AWS_REGION}
@@ -178,21 +181,27 @@ Options are:
 --max-pods                                       # Specify the max pods per created VM, default ${MAX_PODS}
 
 ### Flags in single master node only
+
 --control-plane-public/--no-control-plane-public # Specify if master is hosted in public subnet, default ${CONTROLPLANE_USE_PUBLICIP}
 --worker-node-public/--no-worker-node-public     # Specify if worker nodes asre hosted in public subnet, default ${WORKERNODE_USE_PUBLICIP}
 
 ### Flags in ha mode only
+
 --create-external-etcd | -e                      # Allow to create an external HA etcd cluster, default ${EXTERNAL_ETCD}
 --use-nlb | -u                                   # Allow to use AWS ELB as load balancer else NGINX is used in public vpc
+
+### Flags in both mode
 
 --default-machine | -d=<value>                   # Override machine type used for auto scaling, default ${DEFAULT_MACHINE}
 --ssh-private-key | -s=<value>                   # Override ssh key is used, default ${SSH_PRIVATE_KEY}
 --transport | -t=<value>                         # Override the transport to be used between autoscaler and aws-autoscaler, default ${TRANSPORT}
---no-cloud-provider=aws                          # Set cloud provider to none, default $CLOUD_PROVIDER
+--no-cloud-provider                              # Set cloud provider to none, default $CLOUD_PROVIDER
 --node-group=<value>                             # Override the node group name, default ${NODEGROUP_NAME}
 --cni-plugin-version=<value>                     # Override CNI plugin version, default: ${CNI_PLUGIN_VERSION}
 --cni-plugin=<value>                             # Override CNI plugin, default: ${CNI_PLUGIN}
 --kubernetes-version | -k=<value>                # Override the kubernetes version, default ${KUBERNETES_VERSION}
+--volume-type                                    # Override the root EBS volume type, default ${VOLUME_TYPE}
+--volume-size                                    # Override the root EBS volume size in Gb, default ${VOLUME_SIZE}
 
 ### Flags to configure network in aws
 
