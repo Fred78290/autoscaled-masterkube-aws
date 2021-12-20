@@ -1500,6 +1500,7 @@ AUTOSCALER_CONFIG=$(cat <<EOF
     "minNode": ${MINNODES},
     "maxNode": ${MAXNODES},
     "maxPods": ${MAX_PODS},
+    "node-name-prefix": "autoscaled",
     "nodePrice": 0.0,
     "podPrice": 0.0,
     "image": "${TARGET_IMAGE}",
