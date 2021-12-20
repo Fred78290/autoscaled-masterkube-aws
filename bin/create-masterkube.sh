@@ -339,7 +339,6 @@ while true; do
     --node-group)
         NODEGROUP_NAME="$2"
         MASTERKUBE="${NODEGROUP_NAME}-masterkube"
-        PROVIDERID="${SCHEME}://${NODEGROUP_NAME}/object?type=node&name=${MASTERKUBE}"
         shift 2
         ;;
 
@@ -829,7 +828,6 @@ export MINNODES=${MINNODES}
 export NODEGROUP_NAME=${NODEGROUP_NAME}
 export OSDISTRO=${OSDISTRO}
 export PRIVATE_DOMAIN_NAME=${PRIVATE_DOMAIN_NAME}
-export PROVIDERID=${PROVIDERID}
 export REGISTRY=${REGISTRY}
 export ROOT_IMG_NAME=${ROOT_IMG_NAME}
 export SCALEDOWNDELAYAFTERADD=${SCALEDOWNDELAYAFTERADD}
@@ -1356,7 +1354,6 @@ do
     if [ -f ./config/${NODEGROUP_NAME}/instance-0${INDEX}-prepared ]; then
         echo_title "Already prepared VM ${MASTERKUBE_NODE}"
     else
-        PROVIDERID="${SCHEME}://${NODEGROUP_NAME}/object?type=node&name=${MASTERKUBE_NODE}"
         IPADDR="${IPADDRS[${INDEX}]}"
 
         echo_title "Prepare VM ${MASTERKUBE_NODE} with IP:${IPADDR}"
@@ -1376,7 +1373,7 @@ do
                 NLB_DNS=${IPADDR}
             # Start join worker node
             elif [ ${INDEX} -ge $((CONTROLNODE_INDEX + ${CONTROLNODES})) ]; then
-                echo_blue_bold "Join node ${MASTERKUBE_NODE} instance worker node, kubernetes version=${KUBERNETES_VERSION}, providerID=${PROVIDERID}"
+                echo_blue_bold "Join node ${MASTERKUBE_NODE} instance worker node number ${NODEINDEX}, kubernetes version=${KUBERNETES_VERSION}"
 
                 eval scp ${SCP_OPTIONS} ./cluster/${NODEGROUP_NAME}/*  ${SEED_USER}@${IPADDR}:~/cluster ${SILENT}
 
@@ -1385,11 +1382,10 @@ do
                     --cloud-provider=${CLOUD_PROVIDER} \
                     --use-external-etcd=${EXTERNAL_ETCD} \
                     --node-group=${NODEGROUP_NAME} \
-                    --node-index=${NODEINDEX} \
-                    --provider-id="'${PROVIDERID}'" ${SILENT}
+                    --node-index=${NODEINDEX} ${SILENT}
             # Start create first master node
             elif [ ${INDEX} = ${CONTROLNODE_INDEX} ]; then
-                echo_blue_bold "Start kubernetes ${MASTERKUBE_NODE} instance master node number ${NODEINDEX}, kubernetes version=${KUBERNETES_VERSION}, providerID=${PROVIDERID}"
+                echo_blue_bold "Start kubernetes ${MASTERKUBE_NODE} instance master node number ${NODEINDEX}, kubernetes version=${KUBERNETES_VERSION}"
 
                 if [ ${DOMAIN_NAME} = ${PRIVATE_DOMAIN_NAME} ]; then
                     CERT_EXTRA_SANS="${MASTERKUBE}.${DOMAIN_NAME},${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}"
@@ -1412,8 +1408,7 @@ do
                     --control-plane-endpoint="${CONTROL_PLANE_ENDPOINT}" \
                     --ha-cluster=true \
                     --cni-plugin="${CNI_PLUGIN}" \
-                    --kubernetes-version="${KUBERNETES_VERSION}" \
-                    --provider-id="'${PROVIDERID}'" ${SILENT}
+                    --kubernetes-version="${KUBERNETES_VERSION}" ${SILENT}
 
                 eval scp ${SCP_OPTIONS} ${SEED_USER}@${IPADDR}:/etc/cluster/* ./cluster/${NODEGROUP_NAME}  ${SILENT}
 
@@ -1422,7 +1417,7 @@ do
                 JOIN_IP=${IPADDR}:6443
             # Start control-plane join master node
             else
-                echo_blue_bold "Join control-plane ${MASTERKUBE_NODE} instance master node, kubernetes version=${KUBERNETES_VERSION}, providerID=${PROVIDERID}"
+                echo_blue_bold "Join control-plane ${MASTERKUBE_NODE} instance master node number ${NODEINDEX}, kubernetes version=${KUBERNETES_VERSION}"
 
                 eval scp ${SCP_OPTIONS} ./cluster/${NODEGROUP_NAME}/*  ${SEED_USER}@${IPADDR}:~/cluster ${SILENT}
 
@@ -1432,8 +1427,7 @@ do
                     --cloud-provider=${CLOUD_PROVIDER} \
                     --use-external-etcd=${EXTERNAL_ETCD} \
                     --node-group=${NODEGROUP_NAME} \
-                    --node-index=${NODEINDEX} \
-                    --provider-id="'${PROVIDERID}'" ${SILENT}
+                    --node-index=${NODEINDEX} ${SILENT}
             fi
         else
             # Start nginx load balancer
@@ -1448,7 +1442,7 @@ do
 
             # Single instance master node
             elif [ ${INDEX} = ${CONTROLNODE_INDEX} ]; then
-                echo_blue_bold "Start kubernetes ${MASTERKUBE_NODE} single instance master node, kubernetes version=${KUBERNETES_VERSION}, providerID=${PROVIDERID}"
+                echo_blue_bold "Start kubernetes ${MASTERKUBE_NODE} single instance master node number ${NODEINDEX}, kubernetes version=${KUBERNETES_VERSION}"
 
                 if [ "${DOMAIN_NAME}" != "${PRIVATE_DOMAIN_NAME}" ]; then
                     CERT_EXTRA_SANS="${MASTERKUBE}.${DOMAIN_NAME},${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}"
@@ -1468,14 +1462,13 @@ do
                     --node-group=${NODEGROUP_NAME} \
                     --node-index=${NODEINDEX} \
                     --cni-plugin="${CNI_PLUGIN}" \
-                    --kubernetes-version="${KUBERNETES_VERSION}" \
-                    --provider-id="'${PROVIDERID}'" ${SILENT}
+                    --kubernetes-version="${KUBERNETES_VERSION}" ${SILENT}
 
                 eval scp ${SCP_OPTIONS} ${SEED_USER}@${IPADDR}:/etc/cluster/* ./cluster/${NODEGROUP_NAME}  ${SILENT}
 
                 JOIN_IP=${IPADDR}:6443
             else
-                echo_blue_bold "Join node ${MASTERKUBE_NODE} instance worker node, kubernetes version=${KUBERNETES_VERSION}, providerID=${PROVIDERID}"
+                echo_blue_bold "Join node ${MASTERKUBE_NODE} instance worker node number ${NODEINDEX}, kubernetes version=${KUBERNETES_VERSION}"
 
                 eval scp ${SCP_OPTIONS} ./cluster/${NODEGROUP_NAME}/*  ${SEED_USER}@${IPADDR}:~/cluster ${SILENT}
 
@@ -1485,8 +1478,7 @@ do
                     --cloud-provider=${CLOUD_PROVIDER} \
                     --use-external-etcd=${EXTERNAL_ETCD} \
                     --node-group=${NODEGROUP_NAME} \
-                    --node-index=${NODEINDEX} \
-                    --provider-id="'${PROVIDERID}'" ${SILENT}
+                    --node-index=${NODEINDEX} ${SILENT}
             fi
         fi
 

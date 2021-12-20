@@ -9,7 +9,6 @@ export KUBERNETES_VERSION=v1.21.0
 export CLUSTER_DIR=/etc/cluster
 export SCHEME="aws"
 export NODEGROUP_NAME="aws-ca-k8s"
-export PROVIDERID="${SCHEME}://${NODEGROUP_NAME}/object?type=node&name=${HOSTNAME}"
 export IPADDR=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
 export LOCALHOSTNAME=$(curl -s http://169.254.169.254/latest/meta-data/local-hostname)
 export INSTANCEID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
@@ -65,10 +64,6 @@ while true; do
         ;;
     -n | --node-group)
         NODEGROUP_NAME="$2"
-        shift 2
-        ;;
-    --provider-id)
-        PROVIDERID="$2"
         shift 2
         ;;
     -i | --node-index)
@@ -243,7 +238,7 @@ nodeRegistration:
     network-plugin: cni
     container-runtime: ${CONTAINER_RUNTIME}
     container-runtime-endpoint: ${CONTAINER_CTL}
-    provider-id: ${PROVIDERID}
+    provider-id: ${SCHEME}://${NODEGROUP_NAME}/object?type=node&name=${INSTANCENAME}
     cloud-provider: "${CLOUD_PROVIDER}"
     node-ip: ${IPADDR}
 ---
@@ -354,7 +349,7 @@ EOF
   done
 fi
 
-echo "Init K8 cluster with options:$K8_OPTIONS, PROVIDERID=${PROVIDERID}"
+echo "Init K8 cluster with options:$K8_OPTIONS"
 
 cat ${KUBEADM_CONFIG}
 

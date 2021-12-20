@@ -35,10 +35,6 @@ while true; do
         CLOUD_PROVIDER="$2"
         shift 2
         ;;
-    -p|--provider-id)
-        PROVIDERID=$2
-        shift 2
-        ;;
     --control-plane)
         HA_CLUSTER=$2
         shift 2
@@ -116,7 +112,7 @@ export KUBECONFIG=/etc/kubernetes/admin.conf
 
 cat > patch.yaml <<EOF
 spec:
-  providerID: '${PROVIDERID}'
+  providerID: '${SCHEME}://${NODEGROUP_NAME}/object?type=node&name=${INSTANCENAME}'
 EOF
 
 kubectl patch node ${NODENAME} --patch-file patch.yaml
