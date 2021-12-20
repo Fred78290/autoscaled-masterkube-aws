@@ -12,7 +12,6 @@ CURDIR=$(dirname $0)
 export SCHEME="aws"
 export NODEGROUP_NAME="aws-ca-k8s"
 export MASTERKUBE="${NODEGROUP_NAME}-masterkube"
-export PROVIDERID="${SCHEME}://${NODEGROUP_NAME}/object?type=node&name=${MASTERKUBE}"
 export SSH_PRIVATE_KEY=~/.ssh/id_rsa
 export SSH_PUBLIC_KEY="${SSH_PRIVATE_KEY}.pub"
 export KUBERNETES_VERSION=v1.21.4
