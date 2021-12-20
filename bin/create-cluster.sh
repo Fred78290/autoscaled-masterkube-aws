@@ -70,6 +70,10 @@ while true; do
         NODEINDEX="$2"
         shift 2
         ;;
+    --ecr-password)
+        ECR_PASSWORD=$2
+        shift 2
+        ;;
 
     --container-runtime)
         case "$2" in
@@ -386,6 +390,8 @@ fi
 
 chmod -R uog+r $CLUSTER_DIR/*
 
+# Password for AWS cni plugin
+kubectl create secret docker-registry regcred --docker-server=602401143452.dkr.ecr.us-west-2.amazonaws.com --docker-username=AWS --docker-password=${ECR_PASSWORD}
 if [ "$CNI_PLUGIN" = "aws" ]; then
 
     echo "Install AWS network"

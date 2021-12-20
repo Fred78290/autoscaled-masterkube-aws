@@ -1411,6 +1411,7 @@ do
 
                 ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo create-cluster.sh \
                     --max-pods=${MAX_PODS} \
+                    --ecr-password=${ECR_PASSWORD} \
                     --private-zone-id="${ROUTE53_ZONEID}" \
                     --private-zone-name="${PRIVATE_DOMAIN_NAME}" \
                     --use-external-etcd=${EXTERNAL_ETCD} \
@@ -1468,6 +1469,7 @@ do
 
                 eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo create-cluster.sh \
                     --max-pods=${MAX_PODS} \
+                    --ecr-password=${ECR_PASSWORD} \
                     --private-zone-id="${ROUTE53_ZONEID}" \
                     --private-zone-name="${PRIVATE_DOMAIN_NAME}" \
                     --cert-extra-sans="${CERT_EXTRA_SANS}" \
