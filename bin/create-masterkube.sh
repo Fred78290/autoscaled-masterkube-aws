@@ -823,6 +823,12 @@ else
     source ./config/${NODEGROUP_NAME}/buildenv
 fi
 
+if [ ${WORKERNODES} -eq 0 ]; then
+    MASTER_NODE_ALLOW_DEPLOYMENT=YES
+else
+    MASTER_NODE_ALLOW_DEPLOYMENT=NO
+fi
+
 if [ ${HA_CLUSTER} = "true" ]; then
     if [ "${USE_NLB}" == "YES" ]; then
         FIRSTNODE_INDEX=1
@@ -1359,6 +1365,7 @@ do
                 ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo create-cluster.sh \
                     --max-pods=${MAX_PODS} \
                     --ecr-password=${ECR_PASSWORD} \
+                    --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
                     --private-zone-id="${ROUTE53_ZONEID}" \
                     --private-zone-name="${PRIVATE_DOMAIN_NAME}" \
                     --use-external-etcd=${EXTERNAL_ETCD} \
@@ -1387,6 +1394,7 @@ do
 
                 eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo join-cluster.sh \
                     --join-master=${JOIN_IP} \
+                    --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
                     --control-plane=true \
                     --cloud-provider=${CLOUD_PROVIDER} \
                     --use-external-etcd=${EXTERNAL_ETCD} \
@@ -1417,6 +1425,7 @@ do
                 eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo create-cluster.sh \
                     --max-pods=${MAX_PODS} \
                     --ecr-password=${ECR_PASSWORD} \
+                    --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
                     --private-zone-id="${ROUTE53_ZONEID}" \
                     --private-zone-name="${PRIVATE_DOMAIN_NAME}" \
                     --cert-extra-sans="${CERT_EXTRA_SANS}" \
