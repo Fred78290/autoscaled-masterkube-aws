@@ -1,0 +1,37 @@
+{
+    "t4g.nano": {
+        "price": 0.0046,
+        "memsize": 512,
+        "vcpus": 2
+    },
+    "t4g.micro": {
+        "price": 0.096,
+        "memsize": 1024,
+        "vcpus": 2
+    },
+    "t4g.small": {
+        "price": 0.0184,
+        "memsize": 2048,
+        "vcpus": 2
+    },
+    "t4g.medium": {
+        "price": 0.0368,
+        "memsize": 4096,
+        "vcpus": 2
+    },
+    "t4g.large": {
+        "price": 0.0736,
+        "memsize": 8192,
+        "vcpus": 2
+    },
+    "t4g.xlarge": {
+        "price": 0.1472,
+        "memsize": 16384,
+        "vcpus": 4
+    },
+    "t4g.2xlarge": {
+        "price": 0.2944,
+        "memsize": 32768,
+        "vcpus": 8
+    }
+}
