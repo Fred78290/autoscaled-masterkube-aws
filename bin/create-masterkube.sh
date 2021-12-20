@@ -373,7 +373,7 @@ while true; do
         ;;
 
     --seed-image)
-        SEED_IMAGE="$2"
+        OVERRIDE_SEED_IMAGE="$2"
         shift 2
         ;;
 
@@ -403,7 +403,11 @@ while true; do
         ;;
 
     -d | --default-machine)
-        DEFAULT_MACHINE="$2"
+        OVERRIDE_DEFAULT_MACHINE="$2"
+        shift 2
+        ;;
+    --nginx-machine)
+        OVERRIDE_NGINX_MACHINE="$2"
         shift 2
         ;;
     -s | --ssh-private-key)
@@ -483,114 +487,50 @@ while true; do
     esac
 done
 
+pushd ${CURDIR}/../
+
 if [ "${SEED_ARCH}" == "amd64" ]; then
-    export SEED_IMAGE=${SEED_IMAGE_AMD64}
-    export DEFAULT_MACHINE="t3a.medium"
-    export NGINX_MACHINE="t3a.small"
-    export MACHINES_TYPES=$(cat<<EOF
-    {
-        "t3a.nano": {
-            "price": 0.0051,
-            "memsize": 512,
-            "vcpus": 2,
-            "disksize": 10
-        },
-        "t3a.micro": {
-            "price": 0.0102,
-            "memsize": 1024,
-            "vcpus": 2,
-            "disksize": 10
-        },
-        "t3a.small": {
-            "price": 0.0204,
-            "memsize": 2048,
-            "vcpus": 2,
-            "disksize": 10
-        },
-        "t3a.medium": {
-            "price": 0.0408,
-            "memsize": 4096,
-            "vcpus": 2,
-            "disksize": 10
-        },
-        "t3a.large": {
-            "price": 0.0816,
-            "memsize": 8192,
-            "vcpus": 2,
-            "disksize": 10
-        },
-        "t3a.xlarge": {
-            "price": 0.1632,
-            "memsize": 16384,
-            "vcpus": 4,
-            "disksize": 10
-        },
-        "t3a.2xlarge": {
-            "price": 0.3264,
-            "memsize": 32768,
-            "vcpus": 8,
-            "disksize": 10
-        }
-    }
-EOF
-    )
+    if [ -z "${OVERRIDE_SEED_IMAGE}" ]; then
+        SEED_IMAGE=${SEED_IMAGE_AMD64}
+    else
+        SEED_IMAGE="${OVERRIDE_SEED_IMAGE}"
+    fi
+
+    if [ -z "${OVERRIDE_DEFAULT_MACHINE}" ]; then
+        DEFAULT_MACHINE="t3a.medium"
+    else
+        DEFAULT_MACHINE="${OVERRIDE_DEFAULT_MACHINE}"
+    fi
+
+    if [ -z "${OVERRIDE_NGINX_MACHINE}" ]; then
+        NGINX_MACHINE="t3a.small"
+    else
+        NGINX_MACHINE="${OVERRIDE_NGINX_MACHINE}"
+    fi
 elif [ "${SEED_ARCH}" == "arm64" ]; then
-    export SEED_IMAGE=${SEED_IMAGE_ARM64}
-    export DEFAULT_MACHINE="t4g.medium"
-    export NGINX_MACHINE="t4g.small"
-    export MACHINES_TYPES=$(cat<<EOF
-    {
-        "t4g.nano": {
-            "price": 0.0046,
-            "memsize": 512,
-            "vcpus": 2,
-            "disksize": 10
-        },
-        "t4g.micro": {
-            "price": 0.096,
-            "memsize": 1024,
-            "vcpus": 2,
-            "disksize": 10
-        },
-        "t4g.small": {
-            "price": 0.0184,
-            "memsize": 2048,
-            "vcpus": 2,
-            "disksize": 10
-        },
-        "t4g.medium": {
-            "price": 0.0368,
-            "memsize": 4096,
-            "vcpus": 2,
-            "disksize": 10
-        },
-        "t4g.large": {
-            "price": 0.0736,
-            "memsize": 8192,
-            "vcpus": 2,
-            "disksize": 10
-        },
-        "t4g.xlarge": {
-            "price": 0.1472,
-            "memsize": 16384,
-            "vcpus": 4,
-            "disksize": 10
-        },
-        "t4g.2xlarge": {
-            "price": 0.2944,
-            "memsize": 32768,
-            "vcpus": 8,
-            "disksize": 10
-        }
-    }
-EOF
-    )
+    if [ -z "${OVERRIDE_SEED_IMAGE}" ]; then
+        SEED_IMAGE=${SEED_IMAGE_ARM64}
+    else
+        SEED_IMAGE="${OVERRIDE_SEED_IMAGE}"
+    fi
+
+    if [ -z "${OVERRIDE_DEFAULT_MACHINE}" ]; then
+        DEFAULT_MACHINE="t4g.medium"
+    else
+        DEFAULT_MACHINE="${OVERRIDE_DEFAULT_MACHINE}"
+    fi
+
+    if [ -z "${OVERRIDE_NGINX_MACHINE}" ]; then
+        NGINX_MACHINE="t4g.small"
+    else
+        NGINX_MACHINE="${OVERRIDE_NGINX_MACHINE}"
+    fi
 else
     echo "Unsupported architecture: ${SEED_ARCH}"
     exit -1
 fi
 
-pushd ${CURDIR}/../
+MACHINES_TYPES=$(jq --argjson VOLUME_SIZE ${VOLUME_SIZE} --arg VOLUME_TYPE ${VOLUME_TYPE} 'with_entries(.value += {"diskType": $VOLUME_TYPE, "diskSize": $VOLUME_SIZE})' templates/machines/${SEED_ARCH}.json)
 
 export SSH_KEY_FNAME="$(basename ${SSH_PRIVATE_KEY})"
 export SSH_PUBLIC_KEY="${SSH_PRIVATE_KEY}.pub"
