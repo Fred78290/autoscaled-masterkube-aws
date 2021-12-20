@@ -1069,8 +1069,6 @@ EOF
             sleep 1
         done
 
-        ssh ${SSH_OPTIONS} "${SEED_USER}@${IPADDR}" mkdir /home/${SEED_USER}/cluster -p  2>/dev/null
-
         echo_blue_bold "SSH is ready on ${MASTERKUBE_NODE}, IP=${IPADDR}"
     else
         LAUNCHED_INSTANCES[${INDEX}]="${LAUNCHED_INSTANCE}"
@@ -1080,6 +1078,8 @@ EOF
 
         echo_blue_bold "Already launched ${MASTERKUBE_NODE}, IP=${IPADDR}"
     fi
+
+    ssh ${SSH_OPTIONS} "${SEED_USER}@${IPADDR}" mkdir -p /home/${SEED_USER}/cluster 2>/dev/null
 
     echo -n ${LAUNCHED_INSTANCE} | jq . > ./config/${NODEGROUP_NAME}/instance-0${INDEX}.json
 }
