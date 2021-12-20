@@ -263,6 +263,7 @@ authorization:
     cacheUnauthorizedTTL: 0s
 clusterDNS:
 - ${CLUSTER_DNS}
+cgroupDriver: systemd
 failSwapOn: false
 hairpinMode: hairpin-veth
 readOnlyPort: 10255
@@ -392,28 +393,46 @@ chmod -R uog+r $CLUSTER_DIR/*
 
 # Password for AWS cni plugin
 kubectl create secret docker-registry regcred --docker-server=602401143452.dkr.ecr.us-west-2.amazonaws.com --docker-username=AWS --docker-password=${ECR_PASSWORD}
+
 if [ "$CNI_PLUGIN" = "aws" ]; then
 
     echo "Install AWS network"
 
-    if [ $CONTAINER_ENGINE == "cri-o" ]; then
-      curl -s https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.9.3/config/v1.9/aws-k8s-cni.yaml \
-        | sed -e 's/"mountPath": "\/var\/run\/dockershim.sock"/"mountPath": "\/var\/run\/cri\.sock"/g' -e 's/"path": "\/var\/run\/dockershim.sock"/"path": "\/var\/run\/cri\.sock"/g' \
-        | kubectl apply -f - 2>&1
-    elif [ $CONTAINER_ENGINE == "containerd" ]; then
-      curl -s https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.9.3/config/v1.9/aws-k8s-cni.yaml \
-        | sed -e 's/"mountPath": "\/var\/run\/dockershim.sock"/"mountPath": "\/var\/run\/cri\.sock"/g' -e 's/"path": "\/var\/run\/dockershim.sock"/"path": "\/var\/run\/containerd\/containerd.sock"/g' \
-        | kubectl apply -f - 2>&1
+    KUBERNETES_MINOR_RELEASE=$(kubectl version -o json | jq -r .serverVersion.minor)
+
+    if [ $KUBERNETES_MINOR_RELEASE -gt 20 ]; then
+      AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.10/config/master/aws-k8s-cni.yaml
     else
-      curl -s https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.9.3/config/v1.9/aws-k8s-cni.yaml \
-        | kubectl apply -f - 2>&1
+      AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.9.3/config/v1.9/aws-k8s-cni.yaml
     fi
 
-#       | sed -e '/AWS_VPC_K8S_CNI_EXTERNALSNAT/!b;n;c\          "value": "true"' \
+    case "${CONTAINER_ENGINE}" in
+      cri-o)
+        curl -s ${AWS_CNI_URL} | yq e -P - \
+            | sed -e 's/mountPath: \/var\/run\/dockershim\.sock/mountPath: \/var\/run\/cri\.sock/g' -e 's/path: \/var\/run\/dockershim\.sock/path: \/var\/run\/cri\.sock/g' > cni-aws.yaml
+        ;;
+      containerd)
+        curl -s ${AWS_CNI_URL} | yq e -P - \
+            | sed -e 's/mountPath: \/var\/run\/dockershim\.sock/mountPath: \/var\/run\/cri\.sock/g' -e 's/path: \/var\/run\/dockershim\.sock/path: \/var\/run\/containerd\/containerd\.sock/g' > cni-aws.yaml
+        ;;
+      *)
+        curl -s ${AWS_CNI_URL} > cni-aws.yaml
+        ;;
+    esac
+
+    if [ $CONTAINER_ENGINE == "cri-o" ]; then
+      curl -s ${AWS_CNI_URL} | yq e -P - \
+          | sed -e 's/mountPath: \/var\/run\/dockershim\.sock/mountPath: \/var\/run\/cri\.sock/g' -e 's/path: \/var\/run\/dockershim\.sock/path: \/var\/run\/cri\.sock/g' > cni-aws.yaml
+    elif [ $CONTAINER_ENGINE == "containerd" ]; then
+      curl -s ${AWS_CNI_URL} | yq e -P - \
+          | sed -e 's/mountPath: \/var\/run\/dockershim\.sock/mountPath: \/var\/run\/cri\.sock/g' -e 's/path: \/var\/run\/dockershim\.sock/path: \/var\/run\/containerd\/containerd\.sock/g' > cni-aws.yaml
+    else
+      curl -s ${AWS_CNI_URL} > cni-aws.yaml
+    fi
+
+    kubectl apply -f cni-aws.yaml
 
     kubectl set env daemonset -n kube-system aws-node AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS=${VPC_IPV4_CIDR_BLOCK}
-
-    CNI_SELECTOR="k8s-app=aws-node"
 
 elif [ "$CNI_PLUGIN" = "calico" ]; then
 
@@ -421,15 +440,11 @@ elif [ "$CNI_PLUGIN" = "calico" ]; then
 
     kubectl apply -f "https://docs.projectcalico.org/manifests/calico-vxlan.yaml" 2>&1
 
-    CNI_SELECTOR="k8s-app=calico-node"
-
 elif [ "$CNI_PLUGIN" = "flannel" ]; then
 
     echo "Install flannel network"
 
     kubectl apply -f "https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml" 2>&1
-
-    CNI_SELECTOR="app=flannel"
 
 elif [ "$CNI_PLUGIN" = "weave" ]; then
 
@@ -437,16 +452,14 @@ elif [ "$CNI_PLUGIN" = "weave" ]; then
 
     kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')" 2>&1
 
-    CNI_SELECTOR="name=weave-net"
-
-lif [ "$CNI_PLUGIN" = "canal" ]; then
+elif [ "$CNI_PLUGIN" = "canal" ]; then
 
     echo "Install canal network"
 
     kubectl apply -f "https://raw.githubusercontent.com/projectcalico/canal/master/k8s-install/1.7/rbac.yaml" 2>&1
     kubectl apply -f "https://raw.githubusercontent.com/projectcalico/canal/master/k8s-install/1.7/canal.yaml" 2>&1
 
-    CNI_SELECTOR="k8s-app=canal"
+    #CNI_SELECTOR="k8s-app=canal"
 
 elif [ "$CNI_PLUGIN" = "kube" ]; then
 
@@ -455,7 +468,7 @@ elif [ "$CNI_PLUGIN" = "kube" ]; then
     kubectl apply -f "https://raw.githubusercontent.com/cloudnativelabs/kube-router/master/daemonset/kubeadm-kuberouter.yaml" 2>&1
     kubectl apply -f "https://raw.githubusercontent.com/cloudnativelabs/kube-router/master/daemonset/kubeadm-kuberouter-all-features.yaml" 2>&1
 
-    CNI_SELECTOR="k8s-app=kube-router"
+    #CNI_SELECTOR="k8s-app=kube-router"
 
 elif [ "$CNI_PLUGIN" = "romana" ]; then
 
@@ -463,25 +476,7 @@ elif [ "$CNI_PLUGIN" = "romana" ]; then
 
     kubectl apply -f https://raw.githubusercontent.com/romana/romana/master/containerize/specs/romana-kubeadm.yml 2>&1
 
-    CNI_SELECTOR="romana-app=etcd"
-fi
-
-# Wait CNI ready, then reload coredns
-if [ ! -z ${CNI_SELECTOR} ]; then
-    echo -n "Wait for CNI $CNI_PLUGIN availability"
-    while [ -z "$(kubectl get po -n kube-system 2>/dev/null | grep $CNI_PLUGIN)" ];
-    do
-        sleep 1
-        echo -n "."
-    done
-
-    kubectl wait --namespace kube-system --for=condition=ready pod --selector=${CNI_SELECTOR} --timeout=60s 2>/dev/null || echo "continue...."
-
-    # Force coredns to reload
-    kubectl rollout restart -n kube-system deployment/coredns
-
-    # Wait coredns ready
-    kubectl wait --namespace kube-system --for=condition=ready pod --selector=k8s-app=kube-dns --timeout=60s 2>/dev/null || echo "continue...."
+    #CNI_SELECTOR="romana-app=etcd"
 fi
 
 kubectl label nodes ${NODENAME} "cluster.autoscaler.nodegroup/name=${NODEGROUP_NAME}" \

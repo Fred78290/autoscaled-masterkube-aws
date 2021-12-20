@@ -87,7 +87,7 @@ while true ; do
                     ;;
                 "cri-o"|"containerd")
                     CONTAINER_ENGINE="$2"
-                    CONTAINER_CTL=podman
+                    CONTAINER_CTL=crictl
                     ;;
                 *)
                     echo "Unsupported container runtime: $2"
@@ -151,7 +151,7 @@ cat > $CACHE/mapping.json <<EOF
         "DeviceName": "/dev/sda1",
         "Ebs": {
             "DeleteOnTermination": true,
-            "VolumeType": "standard",
+            "VolumeType": "gp2",
             "VolumeSize": 10,
             "Encrypted": false
         }
@@ -184,6 +184,7 @@ echo "==========================================================================
 echo "= Install mandatories packages"
 echo "==============================================================================================================================="
 apt install jq socat conntrack awscli net-tools traceroute -y
+snap install yq --classic
 echo
 
 EOF
@@ -191,12 +192,22 @@ EOF
 cat >> "${CACHE}/prepare-image.sh" <<"EOF"
 
 function pull_image() {
-    DOCKER_IMAGES=$(curl -s $1 | grep "image: " | sed -E 's/.+image: (.+)/\1/g')
-    
+    local DOCKER_IMAGES=$(curl -s $1 | yq eval -P - | grep "image: " | sed -E 's/.+image: (.+)/\1/g')
+    local USERNAME=$2
+    local PASSWORD=$3
+
+    if [ "${USERNAME}X${PASSWORD}" != "X" ]; then
+        if [ ${CONTAINER_CTL} == crictl ]; then
+            AUTHENT="--creds ${USERNAME}:${PASSWORD}"
+        else
+            ${CONTAINER_CTL} login -u ${USERNAME} -p "${PASSWORD}" "602401143452.dkr.ecr.us-west-2.amazonaws.com"
+        fi
+    fi
+
     for DOCKER_IMAGE in $DOCKER_IMAGES
     do
         echo "Pull image $DOCKER_IMAGE"
-        ${CONTAINER_CTL} pull $DOCKER_IMAGE
+        ${CONTAINER_CTL} pull ${AUTHENT} $DOCKER_IMAGE
     done
 }
 
@@ -224,6 +235,18 @@ sysctl --system
 OS=x${NAME}_${VERSION_ID}
 
 systemctl disable apparmor
+
+echo "Prepare to install CNI plugins"
+
+echo "==============================================================================================================================="
+echo "= Install CNI plugins"
+echo "==============================================================================================================================="
+
+curl -sL "https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGIN_VERSION}/cni-plugins-linux-${SEED_ARCH}-${CNI_PLUGIN_VERSION}.tgz" | tar -C /opt/cni/bin -xz
+
+ls -l /opt/cni/bin
+
+echo
 
 if [ "${CONTAINER_ENGINE}" = "docker" ]; then
 
@@ -258,18 +281,15 @@ SHELL
 elif [ "${CONTAINER_ENGINE}" == "containerd" ]; then
 
     echo "==============================================================================================================================="
-    echo "Install Containerd & podman repositories"
+    echo "Install Containerd"
     echo "==============================================================================================================================="
 
-    echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
-    curl -sL https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable:cri-o:$CRIO_VERSION/$OS/Release.key | sudo apt-key --keyring /etc/apt/trusted.gpg.d/libcontainers-cri-o.gpg add -
-
-    apt-get update
-    apt-get -y install containerd podman
+    curl -sL  https://github.com/containerd/containerd/releases/download/v1.5.8/cri-containerd-cni-1.5.8-linux-amd64.tar.gz | tar -C / -xz
 
     mkdir -p /etc/containerd
     containerd config default | sed 's/SystemdCgroup = false/SystemdCgroup = true/g' | tee /etc/containerd/config.toml
 
+    systemctl enable containerd.service
     systemctl restart containerd
 else
 
@@ -277,22 +297,19 @@ else
     echo "Install CRI-O repositories"
     echo "==============================================================================================================================="
 
-    echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
     echo "deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/$CRIO_VERSION/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable:cri-o:$CRIO_VERSION.list
-
-    curl -sL https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/Release.key | sudo apt-key --keyring /etc/apt/trusted.gpg.d/libcontainers.gpg add -
     curl -sL https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable:cri-o:$CRIO_VERSION/$OS/Release.key | sudo apt-key --keyring /etc/apt/trusted.gpg.d/libcontainers-cri-o.gpg add -
 
     apt update
-    apt install podman cri-o cri-o-runc -y
+    apt install cri-o cri-o-runc -y
     echo
 
     mkdir -p /etc/crio/crio.conf.d/
 
-    cat > /etc/crio/crio.conf.d/02-cgroup-manager.conf <<SHELL
-conmon_cgroup = "pod"
-cgroup_manager = "cgroupfs"
-SHELL
+#    cat > /etc/crio/crio.conf.d/02-cgroup-manager.conf <<SHELL
+#conmon_cgroup = "pod"
+#cgroup_manager = "cgroupfs"
+#SHELL
 
     systemctl daemon-reload
     systemctl enable crio
@@ -333,18 +350,6 @@ if [ $CNI_PLUGIN = "aws" ]; then
     sudo systemctl daemon-reload
     sudo systemctl enable iptables-restore
 fi
-
-echo "Prepare to install CNI plugins"
-
-echo "==============================================================================================================================="
-echo "= Install CNI plugins"
-echo "==============================================================================================================================="
-
-curl -sL "https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGIN_VERSION}/cni-plugins-linux-${SEED_ARCH}-${CNI_PLUGIN_VERSION}.tgz" | tar -C /opt/cni/bin -xz
-
-ls -l /opt/cni/bin
-
-echo
 
 echo "==============================================================================================================================="
 echo "= Install kubernetes binaries"
@@ -410,15 +415,19 @@ else
 SHELL
 fi
 
-echo 'KUBELET_EXTRA_ARGS="--network-plugin=cni"' > /etc/default/kubelet
-
 if [ ${CONTAINER_ENGINE} = "docker" ]; then
+    echo 'KUBELET_EXTRA_ARGS="--network-plugin=cni"' > /etc/default/kubelet
     echo 'KUBELET_KUBEADM_ARGS=""' > /var/lib/kubelet/kubeadm-flags.env
 elif [ ${CONTAINER_ENGINE} = "containerd" ]; then
+    echo > /etc/default/kubelet
     echo 'KUBELET_KUBEADM_ARGS="--container-runtime=remote --container-runtime-endpoint=/run/containerd/containerd.sock"' > /var/lib/kubelet/kubeadm-flags.env
 else
+    echo > /etc/default/kubelet
     echo 'KUBELET_KUBEADM_ARGS="--container-runtime=remote --container-runtime-endpoint=/var/run/crio/crio.sock"' > /var/lib/kubelet/kubeadm-flags.env
 fi
+
+apt dist-upgrade -y
+apt autoremove -y
 
 echo 'export PATH=/opt/cni/bin:$PATH' >> /etc/profile.d/apps-bin-path.sh
 
@@ -440,22 +449,18 @@ echo "= Pull cni image"
 echo "==============================================================================================================================="
 
 if [ "$CNI_PLUGIN" = "aws" ]; then
-    ${CONTAINER_CTL} login -u AWS -p "$ECR_PASSWORD" "602401143452.dkr.ecr.us-west-2.amazonaws.com"
-    pull_image https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.9.3/config/v1.9/aws-k8s-cni.yaml
+    if [ ${KUBERNETES_MINOR_RELEASE} -gt 20 ]; then
+      AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.10/config/master/aws-k8s-cni.yaml
+    else
+      AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.9.3/config/v1.9/aws-k8s-cni.yaml
+    fi
+    pull_image ${AWS_CNI_URL} AWS ${ECR_PASSWORD}
 elif [ "$CNI_PLUGIN" = "calico" ]; then
     curl -s -O -L "https://github.com/projectcalico/calicoctl/releases/download/v3.18.2/calicoctl-linux-${SEED_ARCH}"
     chmod +x calicoctl-linux-${SEED_ARCH}
     mv calicoctl-linux-${SEED_ARCH} /usr/local/bin/calicoctl
     pull_image https://docs.projectcalico.org/manifests/calico-vxlan.yaml
 elif [ "$CNI_PLUGIN" = "flannel" ]; then
-    mkdir -p /etc/cni/net.d/
-    cat > /etc/cni/net.d/10-crio.conf <<SHELL
-{
-    "name": "crio",
-    "cniVersion": "0.3.1",
-    "type": "flannel"
-}
-SHELL
     pull_image https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
 elif [ "$CNI_PLUGIN" = "weave" ]; then
     pull_image "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')"
@@ -469,12 +474,12 @@ elif [ "$CNI_PLUGIN" = "romana" ]; then
     pull_image https://raw.githubusercontent.com/romana/romana/master/containerize/specs/romana-kubeadm.yml
 fi
 
-apt dist-upgrade -y
-apt autoremove -y
-
 echo "==============================================================================================================================="
 echo "= Cleanup"
 echo "==============================================================================================================================="
+
+# Delete default cni config from containerd
+rm -rf /etc/cni/net.d/*
 
 [ -f /etc/cloud/cloud.cfg.d/50-curtin-networking.cfg ] && rm /etc/cloud/cloud.cfg.d/50-curtin-networking.cfg
 rm /etc/netplan/*
