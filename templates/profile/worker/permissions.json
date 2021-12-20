@@ -70,8 +70,6 @@
                 "ec2:DescribeSecurityGroups",
                 "ec2:DescribeStaleSecurityGroups",
                 "ec2:DescribeSubnets",
-                "ec2:DescribeSubnets",
-                "ec2:DescribeTags",
                 "ec2:DescribeTags",
                 "ec2:DescribeVolumes",
                 "ec2:DescribeVolumesModifications",
@@ -114,5 +112,5 @@
                 "*"
             ]
         }
-     ]
+    ]
 }
