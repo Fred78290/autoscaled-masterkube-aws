@@ -102,7 +102,7 @@ while true ; do
 done
 
 if [ -z "$TARGET_IMAGE" ]; then
-    TARGET_IMAGE="focal-k8s-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${SEED_ARCH}-${CONTAINER_ENGINE}"
+    TARGET_IMAGE="focal-k8s-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${CONTAINER_ENGINE}-${SEED_ARCH}"
 fi
 
 if [ "$SEED_ARCH" == "amd64" ]; then
