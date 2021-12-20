@@ -117,7 +117,6 @@ fi
 TARGET_IMAGE_ID=$(aws ec2 describe-images --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters "Name=architecture,Values=x86_64" "Name=name,Values=${TARGET_IMAGE}" "Name=virtualization-type,Values=hvm" 2>/dev/null | jq '.Images[0].ImageId' | tr -d '"' | sed -e 's/null//g')
 SOURCE_IMAGE_ID=$(aws ec2 describe-images --profile ${AWS_PROFILE} --region ${AWS_REGION} --image-ids "${SEED_IMAGE}" 2>/dev/null | jq '.Images[0].ImageId' | tr -d '"' | sed -e 's/null//g')
 KEYEXISTS=$(aws ec2 describe-key-pairs --profile ${AWS_PROFILE} --region ${AWS_REGION} --key-names "${SSH_KEYNAME}" 2>/dev/null | jq  '.KeyPairs[].KeyName' | tr -d '"')
-ECR_ACCOUNT=$(get_ecs_container_account_for_region $AWS_REGION)
 
 if [ ! -z "${TARGET_IMAGE_ID}" ]; then
     if [ $FORCE = NO ]; then
@@ -168,7 +167,6 @@ CNI_PLUGIN_VERSION=${CNI_PLUGIN_VERSION}
 KUBERNETES_VERSION=${KUBERNETES_VERSION}
 KUBERNETES_MINOR_RELEASE=${KUBERNETES_MINOR_RELEASE}
 ECR_PASSWORD=${ECR_PASSWORD}
-ECR_ACCOUNT=${ECR_ACCOUNT}
 CRIO_VERSION=${CRIO_VERSION}
 CONTAINER_ENGINE=${CONTAINER_ENGINE}
 CONTAINER_CTL=${CONTAINER_CTL}
