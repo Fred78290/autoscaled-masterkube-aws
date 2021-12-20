@@ -234,7 +234,7 @@ Options are:
 EOF
 }
 
-TEMP=$(getopt -o xvhrceuwa::p:r:k:n:p:s:t: --long aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
+TEMP=$(getopt -o xvhrceuwa::p:r:k:n:p:s:t: --long create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -255,6 +255,10 @@ while true; do
         ;;
     -r|--resume)
         RESUME=YES
+        shift 1
+        ;;
+    --create-image-only)
+        CREATE_IMAGE_ONLY=YES
         shift 1
         ;;
     --no-cloud-provider)
@@ -771,14 +775,6 @@ else
     PRIVATE_DOMAIN_NAME=${DOMAIN_NAME}
 fi
 
-# Delete previous exixting version
-if [ "${RESUME}" = "NO" ]; then
-    echo_title "Launch custom ${MASTERKUBE} instance with ${TARGET_IMAGE}"
-    delete-masterkube-ha.sh
-else
-    echo_title "Resume custom ${MASTERKUBE} instance with ${TARGET_IMAGE}"
-fi
-
 # If the VM template doesn't exists, build it from scrash
 if [ -z "${TARGET_IMAGE_AMI}" ]; then
     echo "Create aws preconfigured image ${TARGET_IMAGE}"
@@ -807,6 +803,18 @@ if [ -z "${TARGET_IMAGE_AMI}" ]; then
         --subnet-id="${SUBNETID}" \
         --sg-id="${SGID}" \
         --use-public-ip="${CONTROLPLANE_USE_PUBLICIP}"
+fi
+
+if [ "${CREATE_IMAGE_ONLY}" = "YES" ]; then
+    exit 0
+fi
+
+# Delete previous exixting version
+if [ "${RESUME}" = "NO" ]; then
+    echo_title "Launch custom ${MASTERKUBE} instance with ${TARGET_IMAGE}"
+    delete-masterkube.sh
+else
+    echo_title "Resume custom ${MASTERKUBE} instance with ${TARGET_IMAGE}"
 fi
 
 export TARGET_IMAGE_AMI=$(aws ec2 describe-images --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters "Name=name,Values=${TARGET_IMAGE}" | jq -r '.Images[0].ImageId // ""')
