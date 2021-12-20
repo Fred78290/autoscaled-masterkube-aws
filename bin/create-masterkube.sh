@@ -1053,10 +1053,12 @@ EOF
                 --change-batch file://config/${NODEGROUP_NAME}/dns-0${INDEX}.json > /dev/null
 
         elif [ ${INDEX} -ge ${CONTROLNODE_INDEX} ] || [ "${PRIVATE_DOMAIN_NAME}" == "${DOMAIN_NAME}" ]; then
-            # Register kubernetes nodes in godaddy if we don't use route53 and private domain
-            curl -s -X PUT "https://api.godaddy.com/v1/domains/${DOMAIN_NAME}/records/A/${MASTERKUBE_NODE}" \
-                -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
-                -H "Content-Type: application/json" -d "[{\"data\": \"${IPADDR}\"}]"
+            if [ ! -z ${GODADDY_API_KEY} ]; then
+                # Register kubernetes nodes in godaddy if we don't use route53 and private domain
+                curl -s -X PUT "https://api.godaddy.com/v1/domains/${DOMAIN_NAME}/records/A/${MASTERKUBE_NODE}" \
+                    -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
+                    -H "Content-Type: application/json" -d "[{\"data\": \"${IPADDR}\"}]"
+            fi
         fi
 
         echo_blue_bold "Wait for ssh ready on ${MASTERKUBE_NODE}, IP=${IPADDR}"
@@ -1135,7 +1137,7 @@ do
 done
 
 # Register in godaddy IP addresses point in public IP
-if [ "${USE_NLB}" != "YES" ]; then
+if [ "${USE_NLB}" != "YES" ] && [ ! -z ${GODADDY_API_KEY} ]; then
     curl -s -X PUT "https://api.godaddy.com/v1/domains/${DOMAIN_NAME}/records/A/${MASTERKUBE}" \
         -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
         -H "Content-Type: application/json" \
@@ -1243,10 +1245,12 @@ EOF
             PUBLIC_NLB_DNS=${NLB_DNS}
         fi
 
-        curl -s -X PUT "https://api.godaddy.com/v1/domains/${DOMAIN_NAME}/records/CNAME/${MASTERKUBE}" \
-            -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
-            -H "Content-Type: application/json" \
-            -d "[{\"data\": \"${PUBLIC_NLB_DNS}\"}]"
+        if [ ! -z ${GODADDY_API_KEY} ]; then
+            curl -s -X PUT "https://api.godaddy.com/v1/domains/${DOMAIN_NAME}/records/CNAME/${MASTERKUBE}" \
+                -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
+                -H "Content-Type: application/json" \
+                -d "[{\"data\": \"${PUBLIC_NLB_DNS}\"}]"
+        fi
     fi
 
     echo "export NLB_DNS=${NLB_DNS}" >> ./config/${NODEGROUP_NAME}/buildenv
@@ -1596,14 +1600,16 @@ else
     kubectl create secret generic etcd-ssl --kubeconfig=./cluster/${NODEGROUP_NAME}/config -n kube-system
 fi
 
-curl -s -X PUT "https://api.godaddy.com/v1/domains/${DOMAIN_NAME}/records/CNAME/masterkube-aws-dashboard" \
-    -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
-    -H "Content-Type: application/json" \
-    -d "[{\"data\": \"${MASTERKUBE}.${DOMAIN_NAME}\"}]"
+if [ ! -z ${GODADDY_API_KEY} ]; then
+    curl -s -X PUT "https://api.godaddy.com/v1/domains/${DOMAIN_NAME}/records/CNAME/masterkube-aws-dashboard" \
+        -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
+        -H "Content-Type: application/json" \
+        -d "[{\"data\": \"${MASTERKUBE}.${DOMAIN_NAME}\"}]"
 
-curl -s -X PUT "https://api.godaddy.com/v1/domains/${DOMAIN_NAME}/records/CNAME/helloworld-aws" \
-    -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
-    -H "Content-Type: application/json" \
-    -d "[{\"data\": \"${MASTERKUBE}.${DOMAIN_NAME}\"}]"
+    curl -s -X PUT "https://api.godaddy.com/v1/domains/${DOMAIN_NAME}/records/CNAME/helloworld-aws" \
+        -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
+        -H "Content-Type: application/json" \
+        -d "[{\"data\": \"${MASTERKUBE}.${DOMAIN_NAME}\"}]"
+fi
 
 popd
