@@ -1334,6 +1334,8 @@ do
         eval scp ${SCP_OPTIONS} bin ${SEED_USER}@${IPADDR}:~ ${SILENT}
         eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo cp /home/${SEED_USER}/bin/* /usr/local/bin ${SILENT}
 
+        NODEINDEX=$((INDEX - ${CONTROLNODE_INDEX}))
+
         if [ "${HA_CLUSTER}" = "true" ]; then
             # Start nginx load balancer
             if [ ${INDEX} -lt ${CONTROLNODE_INDEX} ]; then
