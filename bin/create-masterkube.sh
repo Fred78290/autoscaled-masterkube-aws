@@ -1038,7 +1038,7 @@ EOF
             "ResourceRecordSet": {
                 "Name": "${MASTERKUBE_NODE}.${PRIVATE_DOMAIN_NAME}",
                 "Type": "A",
-                "TTL": 300,
+                "TTL": 60,
                 "ResourceRecords": [
                     {
                         "Value": "${IPADDR}"
@@ -1106,7 +1106,7 @@ ROUTE53_REGISTER=$(cat << EOF
             "ResourceRecordSet": {
                 "Name": "${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}",
                 "Type": "A",
-                "TTL": 300,
+                "TTL": 60,
                 "ResourceRecords": [
                 ]
             }
@@ -1222,7 +1222,7 @@ if [ "${HA_CLUSTER}" = "true" ]; then
             "ResourceRecordSet": {
                 "Name": "${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}",
                 "Type": "CNAME",
-                "TTL": 300,
+                "TTL": 60,
                 "ResourceRecords": [
                     {
                         "Value": "${NLB_DNS}"
