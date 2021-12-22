@@ -4,6 +4,18 @@
         {
             "Effect": "Allow",
             "Action": [
+                "route53:GetHostedZone",
+                "route53:GetHostedZoneCount",
+                "route53:GetHostedZoneCount",
+                "route53:ChangeResourceRecordSets",
+                "route53:GetChange",
+                "route53:ListResourceRecordSets"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
                 "ecr:GetAuthorizationToken",
                 "ecr:BatchCheckLayerAvailability",
                 "ecr:GetDownloadUrlForLayer",
