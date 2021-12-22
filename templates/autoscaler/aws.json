@@ -19,12 +19,10 @@
             "metadata": {
                 "labels": {
                     "k8s-app": "aws-autoscaler"
-                },
-                "annotations": {
-                    "scheduler.alpha.kubernetes.io/critical-pod": ""
                 }
             },
             "spec": {
+                "priorityClassName": "system-cluster-critical",
                 "nodeSelector": {
                     "master": "true"
                 },

@@ -19,16 +19,24 @@
             "metadata": {
                 "labels": {
                     "k8s-app": "cluster-autoscaler"
-                },
-                "annotations": {
-                    "scheduler.alpha.kubernetes.io/critical-pod": ""
                 }
             },
             "spec": {
                 "serviceAccountName": "cluster-autoscaler",
+                "priorityClassName": "system-cluster-critical",
                 "nodeSelector": {
                     "master": "true"
                 },
+                "tolerations": [
+                    {
+                        "key": "node-role.kubernetes.io/master",
+                        "effect": "NoSchedule"
+                    },
+                    {
+                        "key": "node-role.kubernetes.io/control-plane",
+                        "effect": "NoSchedule"
+                    }
+                ],
                 "containers": [
                     {
                         "image": "$REGISTRY/cluster-autoscaler:$CLUSTER_AUTOSCALER_VERSION",
