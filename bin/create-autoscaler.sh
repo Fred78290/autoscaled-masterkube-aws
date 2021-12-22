@@ -5,9 +5,9 @@ CURDIR=$(dirname $0)
 
 pushd $CURDIR/../
 
-MASTER_IP=$(cat ./cluster/manager-ip)
-TOKEN=$(cat ./cluster/token)
-CACERT=$(cat ./cluster/ca.cert)
+MASTER_IP=$(cat ./cluster/${NODEGROUP_NAME}/manager-ip)
+TOKEN=$(cat ./cluster/${NODEGROUP_NAME}/token)
+CACERT=$(cat ./cluster/${NODEGROUP_NAME}/ca.cert)
 
 export K8NAMESPACE=kube-system
 export ETC_DIR=./config/${NODEGROUP_NAME}/deployment/autoscaler
