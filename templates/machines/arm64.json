@@ -33,5 +33,65 @@
         "price": 0.2944,
         "memsize": 32768,
         "vcpus": 8
+    },
+    "c6g.medium": {
+        "price": 0.0365,
+        "memsize": 2048,
+        "vcpus": 1
+    },
+    "c6g.large": {
+        "price": 0.073,
+        "memsize": 4096,
+        "vcpus": 2
+    },
+    "c6g.xlarge": {
+        "price": 0.1459,
+        "memsize": 8192,
+        "vcpus": 4
+    },
+    "c6g.2xlarge": {
+        "price": 0.2918,
+        "memsize": 16384,
+        "vcpus": 8
+    },
+    "m6g.medium": {
+        "price": 0.043,
+        "memsize": 4096,
+        "vcpus": 1
+    },
+    "m6g.large": {
+        "price": 0.086,
+        "memsize": 8192,
+        "vcpus": 2
+    },
+    "m6g.xlarge": {
+        "price": 0.172,
+        "memsize": 16384,
+        "vcpus": 4
+    },
+    "m6g.2xlarge": {
+        "price": 0.344,
+        "memsize": 32768,
+        "vcpus": 8
+    },
+    "r6g.medium": {
+        "price": 0.0564,
+        "memsize": 8192,
+        "vcpus": 1
+    },
+    "r6g.large": {
+        "price": 0.1128,
+        "memsize": 16384,
+        "vcpus": 2
+    },
+    "r6g.xlarge": {
+        "price": 0.2256,
+        "memsize": 32768,
+        "vcpus": 4
+    },
+    "r6g.2xlarge": {
+        "price": 0.4512,
+        "memsize": 65536,
+        "vcpus": 8
     }
 }
