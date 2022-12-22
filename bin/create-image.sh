@@ -3,7 +3,7 @@
 set -e
 
 KUBERNETES_VERSION=$(curl -sSL https://dl.k8s.io/release/stable.txt)
-CNI_PLUGIN_VERSION=v1.0.1
+CNI_PLUGIN_VERSION=v1.1.1
 CNI_PLUGIN=aws
 CACHE=~/.local/aws/cache
 OSDISTRO=$(uname -s)
@@ -17,14 +17,21 @@ SEED_IMAGE="<to be filled>"
 TARGET_IMAGE=
 CONTAINER_ENGINE=docker
 CONTAINER_CTL=docker
-VPC_PUBLIC_SUBNET_ID="<to be filled>"
-VPC_PUBLIC_SECURITY_GROUPID="<to be filled>"
-
-VPC_MASTER_USE_PUBLICIP=true
+SUBNET_ID="<to be filled>"
+SECURITY_GROUPID="<to be filled>"
+SSH_KEY_PUB=~/.ssh/id_rsa.pub
+SSH_KEY_PRIV=~/.ssh/id_rsa
+MASTER_USE_PUBLICIP=true
 
 SSH_OPTIONS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-source ${CURDIR}/aws.defs
+if [ "$(uname -s)" == "Darwin" ]; then
+    shopt -s expand_aliases
+
+    alias base64=gbase64
+    alias sed=gsed
+    alias getopt=/usr/local/opt/gnu-getopt/bin/getopt
+fi
 
 if [ "$OSDISTRO" == "Linux" ]; then
     TZ=$(cat /etc/timezone)
@@ -32,29 +39,7 @@ else
     TZ=$(sudo systemsetup -gettimezone | awk '{print $2}')
 fi
 
-function get_ecs_container_account_for_region () {
-    local region="$1"
-    case "${region}" in
-    ap-east-1)
-        echo "800184023465";;
-    me-south-1)
-        echo "558608220178";;
-    cn-north-1)
-        echo "918309763551";;
-    cn-northwest-1)
-        echo "961992271922";;
-    us-gov-west-1)
-        echo "013241004608";;
-    us-gov-east-1)
-        echo "151742754352";;
-    *)
-        echo "602401143452";;
-    esac
-}
-
-mkdir -p $CACHE
-
-TEMP=`getopt -o kfc:i:n:op:s:u:v: --long container-runtime:,arch:,ecr-password:,force,profile:,region:,subnet-id:,sg-id:,use-public-ip:,user:,ami:,custom-image:,ssh-key-name:,cni-plugin:,cni-plugin-version:,kubernetes-version: -n "$0" -- "$@"`
+TEMP=`getopt -o kfc:i:n:op:s:u:v: --long cache-dir:,container-runtime:,arch:,ecr-password:,force,profile:,region:,subnet-id:,sg-id:,use-public-ip:,user:,ami:,custom-image:,ssh-key-name:,ssh-key-file:,ssh-key-private:,cni-plugin:,cni-plugin-version:,kubernetes-version: -n "$0" -- "$@"`
 eval set -- "$TEMP"
 
 # extract options and their arguments into variables.
@@ -75,9 +60,13 @@ while true ; do
         --arch) SEED_ARCH=$2 ; shift 2;;
         --ecr-password) ECR_PASSWORD=$2 ; shift 2;;
         --ssh-key-name) SSH_KEYNAME=$2 ; shift 2;;
-        --subnet-id) VPC_PUBLIC_SUBNET_ID="${2}" ; shift 2;;
-        --sg-id) VPC_PUBLIC_SECURITY_GROUPID="${2}" ; shift 2;;
-        --use-public-ip) VPC_MASTER_USE_PUBLICIP="${2}" ; shift 2;;
+        --ssh-key-file) SSH_KEY_PUB="${2}" ; shift 2;;
+        --ssh-key-private) SSH_KEY_PRIV="${2}" ; shift 2;;
+        --subnet-id) SUBNET_ID="${2}" ; shift 2;;
+        --sg-id) SECURITY_GROUPID="${2}" ; shift 2;;
+        --use-public-ip) MASTER_USE_PUBLICIP="${2}" ; shift 2;;
+
+        --cache-dir) CACHE=$2 ; shift 2;;
 
         --container-runtime)
             case "$2" in
@@ -100,6 +89,8 @@ while true ; do
         *) echo "$1 - Internal error!" ; exit 1 ;;
     esac
 done
+
+mkdir -p $CACHE
 
 if [ -z "$TARGET_IMAGE" ]; then
     TARGET_IMAGE="focal-k8s-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${CONTAINER_ENGINE}-${SEED_ARCH}"
@@ -151,7 +142,7 @@ cat > $CACHE/mapping.json <<EOF
         "DeviceName": "/dev/sda1",
         "Ebs": {
             "DeleteOnTermination": true,
-            "VolumeType": "gp2",
+            "VolumeType": "gp3",
             "VolumeSize": 10,
             "Encrypted": false
         }
@@ -174,6 +165,7 @@ CONTAINER_CTL=${CONTAINER_CTL}
 echo "==============================================================================================================================="
 echo "= Upgrade ubuntu distro"
 echo "==============================================================================================================================="
+
 apt update
 apt dist-upgrade -y
 echo
@@ -183,16 +175,50 @@ apt update
 echo "==============================================================================================================================="
 echo "= Install mandatories packages"
 echo "==============================================================================================================================="
-apt install jq socat conntrack awscli net-tools traceroute -y
+apt install jq socat conntrack net-tools traceroute nfs-common unzip -y
 snap install yq --classic
+
+echo "==============================================================================================================================="
+echo "= Install aws cli"
+echo "==============================================================================================================================="
+
+mkdir -p /tmp/aws-install
+
+pushd /tmp/aws-install
+
+if [ "\$SEED_ARCH" == "arm64" ];  then
+    echo "= Install aws cli arm64"
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"
+else
+    echo "= Install aws cli amd64"
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+fi
+
+unzip awscliv2.zip > /dev/null
+
+./aws/install
+
+popd
+
+rm -rf /tmp/aws-install
+
 echo
+
+echo "==============================================================================================================================="
+echo "= Done"
+echo "==============================================================================================================================="
+
+cat > /etc/apt/apt.conf.d/20auto-upgrades <<SHELL
+APT::Periodic::Update-Package-Lists "0";
+APT::Periodic::Unattended-Upgrade "0";
+SHELL
 
 EOF
 
 cat >> "${CACHE}/prepare-image.sh" <<"EOF"
 
 function pull_image() {
-    local DOCKER_IMAGES=$(curl -s $1 | yq eval -P - | grep "image: " | sed -E 's/.+image: (.+)/\1/g')
+    local DOCKER_IMAGES=$(curl -s $1 | yq eval -P - | grep -E "\simage: " | sed -E 's/.+image: (.+)/\1/g')
     local USERNAME=$2
     local PASSWORD=$3
 
@@ -284,13 +310,15 @@ elif [ "${CONTAINER_ENGINE}" == "containerd" ]; then
     echo "Install Containerd"
     echo "==============================================================================================================================="
 
-    curl -sL  https://github.com/containerd/containerd/releases/download/v1.5.8/cri-containerd-cni-1.5.8-linux-amd64.tar.gz | tar -C / -xz
+    curl -sL  https://github.com/containerd/containerd/releases/download/v1.6.8/cri-containerd-cni-1.6.8-linux-${SEED_ARCH}.tar.gz | tar -C / -xz
 
     mkdir -p /etc/containerd
     containerd config default | sed 's/SystemdCgroup = false/SystemdCgroup = true/g' | tee /etc/containerd/config.toml
 
     systemctl enable containerd.service
     systemctl restart containerd
+
+    curl -sL  https://github.com/containerd/nerdctl/releases/download/v1.0.0/nerdctl-1.0.0-linux-${SEED_ARCH}.tar.gz | tar -C /usr/local/bin -xz
 else
 
     echo "==============================================================================================================================="
@@ -359,6 +387,9 @@ cd /usr/local/bin
 curl -sL --remote-name-all https://storage.googleapis.com/kubernetes-release/release/${KUBERNETES_VERSION}/bin/linux/${SEED_ARCH}/{kubeadm,kubelet,kubectl,kube-proxy}
 chmod +x /usr/local/bin/kube*
 
+curl -sL https://github.com/Fred78290/aws-ecr-credential-provider/releases/download/v1.0.0/ecr-credential-provider-${SEED_ARCH} -o ecr-credential-provider
+chmod +x /usr/local/bin/ecr-credential-provider
+
 echo
 
 echo "==============================================================================================================================="
@@ -367,6 +398,24 @@ echo "==========================================================================
 
 mkdir -p /etc/systemd/system/kubelet.service.d
 mkdir -p /var/lib/kubelet
+mkdir -p /etc/kubernetes
+
+cat > /etc/kubernetes/credential.yaml <<SHELL
+apiVersion: kubelet.config.k8s.io/v1alpha1
+kind: CredentialProviderConfig
+providers:
+  - name: ecr-credential-provider
+    matchImages:
+      - "*.dkr.ecr.*.amazonaws.com"
+      - "*.dkr.ecr.*.amazonaws.cn"
+      - "*.dkr.ecr-fips.*.amazonaws.com"
+      - "*.dkr.ecr.us-iso-east-1.c2s.ic.gov"
+      - "*.dkr.ecr.us-isob-east-1.sc2s.sgov.gov"
+    defaultCacheDuration: "12h"
+    apiVersion: credentialprovider.kubelet.k8s.io/v1alpha1
+    args:
+      - get-credentials
+SHELL
 
 cat > /etc/systemd/system/kubelet.service <<SHELL
 [Unit]
@@ -416,13 +465,13 @@ SHELL
 fi
 
 if [ ${CONTAINER_ENGINE} = "docker" ]; then
-    echo 'KUBELET_EXTRA_ARGS="--network-plugin=cni"' > /etc/default/kubelet
+    echo 'KUBELET_EXTRA_ARGS="--image-credential-provider-config=/etc/kubernetes/credential.yaml --image-credential-provider-bin-dir=/usr/local/bin/ --network-plugin=cni"' > /etc/default/kubelet
     echo 'KUBELET_KUBEADM_ARGS=""' > /var/lib/kubelet/kubeadm-flags.env
 elif [ ${CONTAINER_ENGINE} = "containerd" ]; then
-    echo > /etc/default/kubelet
+    echo 'KUBELET_EXTRA_ARGS="--image-credential-provider-config=/etc/kubernetes/credential.yaml --image-credential-provider-bin-dir=/usr/local/bin/"' > /etc/default/kubelet
     echo 'KUBELET_KUBEADM_ARGS="--container-runtime=remote --container-runtime-endpoint=/run/containerd/containerd.sock"' > /var/lib/kubelet/kubeadm-flags.env
 else
-    echo > /etc/default/kubelet
+    echo 'KUBELET_EXTRA_ARGS="--image-credential-provider-config=/etc/kubernetes/credential.yaml --image-credential-provider-bin-dir=/usr/local/bin/"' > /etc/default/kubelet
     echo 'KUBELET_KUBEADM_ARGS="--container-runtime=remote --container-runtime-endpoint=/var/run/crio/crio.sock"' > /var/lib/kubelet/kubeadm-flags.env
 fi
 
@@ -449,7 +498,9 @@ echo "= Pull cni image"
 echo "==============================================================================================================================="
 
 if [ "$CNI_PLUGIN" = "aws" ]; then
-    if [ ${KUBERNETES_MINOR_RELEASE} -gt 20 ]; then
+    if [ ${KUBERNETES_MINOR_RELEASE} -gt 22 ]; then
+      AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.11/config/master/aws-k8s-cni.yaml
+    elif [ ${KUBERNETES_MINOR_RELEASE} -gt 20 ]; then
       AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.10/config/master/aws-k8s-cni.yaml
     else
       AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.9.3/config/v1.9/aws-k8s-cni.yaml
@@ -500,7 +551,7 @@ EOF
 
 chmod +x "${CACHE}/prepare-image.sh"
 
-if [ "${VPC_MASTER_USE_PUBLICIP}" == "true" ]; then
+if [ "${MASTER_USE_PUBLICIP}" == "true" ]; then
     PUBLIC_IP_OPTIONS=--associate-public-ip-address
 else
     PUBLIC_IP_OPTIONS=--no-associate-public-ip-address
@@ -514,8 +565,8 @@ LAUNCHED_INSTANCE=$(aws ec2 run-instances \
     --count 1  \
     --instance-type ${INSTANCE_TYPE} \
     --key-name ${SSH_KEYNAME} \
-    --subnet-id ${VPC_PUBLIC_SUBNET_ID} \
-    --security-group-ids ${VPC_PUBLIC_SECURITY_GROUPID} \
+    --subnet-id ${SUBNET_ID} \
+    --security-group-ids ${SECURITY_GROUPID} \
     --block-device-mappings "file://${CACHE}/mapping.json" \
     --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${TARGET_IMAGE}}]" \
     ${PUBLIC_IP_OPTIONS})
@@ -539,7 +590,7 @@ echo
 
 LAUNCHED_INSTANCE=$(aws ec2  describe-instances --profile ${AWS_PROFILE} --region ${AWS_REGION} --instance-ids ${LAUNCHED_ID} | jq .Reservations[0].Instances[0])
 
-if [ "${VPC_MASTER_USE_PUBLICIP}" == "true" ]; then
+if [ "${MASTER_USE_PUBLICIP}" == "true" ]; then
     export IPADDR=$(echo ${LAUNCHED_INSTANCE} | jq '.PublicIpAddress' | tr -d '"' | sed -e 's/null//g')
     IP_TYPE="public"
 else

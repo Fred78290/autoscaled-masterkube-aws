@@ -114,7 +114,7 @@ while true; do
         shift 2
         ;;
     --load-balancer-ip)
-        IFS=, read -a LOAD_BALANCER_IP <<<$2
+        IFS=, read -a LOAD_BALANCER_IP <<< "$2"
         shift 2
         ;;
     --control-plane-endpoint)
@@ -122,7 +122,7 @@ while true; do
         shift 2
         ;;
     --cluster-nodes)
-        IFS=, read -a CLUSTER_NODES<<<$2
+        IFS=, read -a CLUSTER_NODES <<< "$2"
         shift 2
         ;;
     -k | --kubernetes-version)
@@ -131,7 +131,7 @@ while true; do
         ;;
 
     -s | --cert-extra-sans)
-        IFS=, read -a CERT_EXTRA_SANS<<<$2
+        IFS=, read -a CERT_EXTRA_SANS <<< "$2"
         shift 2
         ;;
 
@@ -227,7 +227,7 @@ else
 fi
 
 cat > ${KUBEADM_CONFIG} <<EOF
-apiVersion: kubeadm.k8s.io/v1beta2
+apiVersion: kubeadm.k8s.io/v1beta3
 kind: InitConfiguration
 bootstrapTokens:
 - groups:
@@ -241,7 +241,7 @@ localAPIEndpoint:
   advertiseAddress: ${APISERVER_ADVERTISE_ADDRESS}
   bindPort: ${APISERVER_ADVERTISE_PORT}
 nodeRegistration:
-  criSocket: ${CONTAINER_CTL}
+  criSocket: unix://${CONTAINER_CTL}
   name: ${NODENAME}
   taints:
   - effect: NoSchedule
@@ -249,10 +249,8 @@ nodeRegistration:
   - effect: NoSchedule
     key: node-role.kubernetes.io/control-plane
   kubeletExtraArgs:
-    network-plugin: cni
     container-runtime: ${CONTAINER_RUNTIME}
     container-runtime-endpoint: ${CONTAINER_CTL}
-    provider-id: ${SCHEME}://${NODEGROUP_NAME}/object?type=node&name=${INSTANCENAME}
     cloud-provider: "${CLOUD_PROVIDER}"
     node-ip: ${IPADDR}
 ---
@@ -295,12 +293,10 @@ syncFrequency: 0s
 volumeStatsAggPeriod: 0s
 maxPods: ${MAX_PODS}
 ---
-apiVersion: kubeadm.k8s.io/v1beta2
+apiVersion: kubeadm.k8s.io/v1beta3
 kind: ClusterConfiguration
 certificatesDir: /etc/kubernetes/pki
 clusterName: ${NODEGROUP_NAME}
-dns:
-  type: CoreDNS
 imageRepository: k8s.gcr.io
 kubernetesVersion: ${KUBERNETES_VERSION}
 networking:
@@ -313,6 +309,9 @@ controllerManager:
     cloud-provider: "${CLOUD_PROVIDER}"
     configure-cloud-routes: "${CONFIGURE_CLOUD_ROUTE}"
 controlPlaneEndpoint: ${CONTROL_PLANE_ENDPOINT}:${APISERVER_ADVERTISE_PORT}
+dns:
+  imageRepository: k8s.gcr.io/coredns
+  imageTag: v1.9.3
 apiServer:
   extraArgs:
     authorization-mode: Node,RBAC
@@ -337,14 +336,13 @@ done
 
 for CLUSTER_NODE in ${CLUSTER_NODES[*]}
 do
-echo CLUSTER_NODE=$CLUSTER_NODE
-  IFS=: read HOST IP <<< $CLUSTER_NODE
+  IFS=: read HOST IP <<< "$CLUSTER_NODE"
   [ -z ${IP} ] || echo "  - ${IP}" >> ${KUBEADM_CONFIG}
   [ -z ${HOST} ] || echo "  - ${HOST}" >> ${KUBEADM_CONFIG}
   [ -z ${HOST} ] || echo "  - ${HOST%%.*}" >> ${KUBEADM_CONFIG}
 done
 
-    # External ETCD
+# External ETCD
 if [ "$EXTERNAL_ETCD" = "true" ]; then
   cat >> ${KUBEADM_CONFIG} <<EOF
 etcd:
@@ -375,6 +373,8 @@ echo "Retrieve token infos"
 openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | openssl rsa -pubin -outform der 2>/dev/null | openssl dgst -sha256 -hex | sed 's/^.* //' | tr -d '\n' > $CLUSTER_DIR/ca.cert
 kubeadm token list 2>&1 | grep "authentication,signing" | awk '{print $1}'  | tr -d '\n' > $CLUSTER_DIR/token 
 
+echo "Get token:$(cat $CLUSTER_DIR/token)"
+echo "Get cacert:$(cat $CLUSTER_DIR/ca.cert)"
 echo "Set local K8 environement"
 
 mkdir -p $HOME/.kube
@@ -383,26 +383,27 @@ chown $(id -u):$(id -g) $HOME/.kube/config
 
 cp /etc/kubernetes/admin.conf $CLUSTER_DIR/config
 
-if [ "$HA_CLUSTER" = "true" ]; then
+export KUBECONFIG=/etc/kubernetes/admin.conf
+
+mkdir -p $CLUSTER_DIR/kubernetes/pki
+
+cp /etc/kubernetes/pki/ca.crt $CLUSTER_DIR/kubernetes/pki
+cp /etc/kubernetes/pki/ca.key $CLUSTER_DIR/kubernetes/pki
+cp /etc/kubernetes/pki/sa.key $CLUSTER_DIR/kubernetes/pki
+cp /etc/kubernetes/pki/sa.pub $CLUSTER_DIR/kubernetes/pki
+cp /etc/kubernetes/pki/front-proxy-ca.crt $CLUSTER_DIR/kubernetes/pki
+cp /etc/kubernetes/pki/front-proxy-ca.key $CLUSTER_DIR/kubernetes/pki
+
+if [ "$EXTERNAL_ETCD" != "true" ]; then
     mkdir -p $CLUSTER_DIR/kubernetes/pki/etcd
-
-    cp /etc/kubernetes/pki/ca.crt $CLUSTER_DIR/kubernetes/pki
-    cp /etc/kubernetes/pki/ca.key $CLUSTER_DIR/kubernetes/pki
-    cp /etc/kubernetes/pki/sa.key $CLUSTER_DIR/kubernetes/pki
-    cp /etc/kubernetes/pki/sa.pub $CLUSTER_DIR/kubernetes/pki
-    cp /etc/kubernetes/pki/front-proxy-ca.crt $CLUSTER_DIR/kubernetes/pki
-    cp /etc/kubernetes/pki/front-proxy-ca.key $CLUSTER_DIR/kubernetes/pki
-
-    if [ "$EXTERNAL_ETCD" != "true" ]; then
-        cp /etc/kubernetes/pki/etcd/ca.crt $CLUSTER_DIR/kubernetes/pki/etcd/ca.crt
-        cp /etc/kubernetes/pki/etcd/ca.key $CLUSTER_DIR/kubernetes/pki/etcd/ca.key
-    fi
+    cp /etc/kubernetes/pki/etcd/ca.crt $CLUSTER_DIR/kubernetes/pki/etcd/ca.crt
+    cp /etc/kubernetes/pki/etcd/ca.key $CLUSTER_DIR/kubernetes/pki/etcd/ca.key
 fi
 
 chmod -R uog+r $CLUSTER_DIR/*
 
 # Password for AWS cni plugin
-kubectl create secret docker-registry regcred --docker-server=602401143452.dkr.ecr.us-west-2.amazonaws.com --docker-username=AWS --docker-password=${ECR_PASSWORD}
+kubectl create secret docker-registry aws-registry --docker-server=602401143452.dkr.ecr.us-west-2.amazonaws.com --docker-username=AWS --docker-password=${ECR_PASSWORD}
 
 if [ "$CNI_PLUGIN" = "aws" ]; then
 
@@ -410,7 +411,9 @@ if [ "$CNI_PLUGIN" = "aws" ]; then
 
     KUBERNETES_MINOR_RELEASE=$(kubectl version -o json | jq -r .serverVersion.minor)
 
-    if [ $KUBERNETES_MINOR_RELEASE -gt 20 ]; then
+    if [ $KUBERNETES_MINOR_RELEASE -gt 22 ]; then
+      AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.11/config/master/aws-k8s-cni.yaml
+    elif [ $KUBERNETES_MINOR_RELEASE -gt 20 ]; then
       AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.10/config/master/aws-k8s-cni.yaml
     else
       AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.9.3/config/v1.9/aws-k8s-cni.yaml
@@ -418,15 +421,15 @@ if [ "$CNI_PLUGIN" = "aws" ]; then
 
     case "${CONTAINER_ENGINE}" in
       cri-o)
-        curl -s ${AWS_CNI_URL} | yq e -P - \
+        curl -s ${AWS_CNI_URL} | sed 's/1\.11\.4-rc1/1.11.3/g' | yq e -P - \
             | sed -e 's/mountPath: \/var\/run\/dockershim\.sock/mountPath: \/var\/run\/cri\.sock/g' -e 's/path: \/var\/run\/dockershim\.sock/path: \/var\/run\/cri\.sock/g' > cni-aws.yaml
         ;;
       containerd)
-        curl -s ${AWS_CNI_URL} | yq e -P - \
+        curl -s ${AWS_CNI_URL} | sed 's/1\.11\.4-rc1/1.11.3/g' | yq e -P - \
             | sed -e 's/mountPath: \/var\/run\/dockershim\.sock/mountPath: \/var\/run\/cri\.sock/g' -e 's/path: \/var\/run\/dockershim\.sock/path: \/var\/run\/containerd\/containerd\.sock/g' > cni-aws.yaml
         ;;
       *)
-        curl -s ${AWS_CNI_URL} > cni-aws.yaml
+        curl -s ${AWS_CNI_URL} | sed 's/1\.11\.4-rc1/1.11.3/g' > cni-aws.yaml
         ;;
     esac
 
@@ -469,8 +472,6 @@ elif [ "$CNI_PLUGIN" = "canal" ]; then
     kubectl apply -f "https://raw.githubusercontent.com/projectcalico/canal/master/k8s-install/1.7/rbac.yaml" 2>&1
     kubectl apply -f "https://raw.githubusercontent.com/projectcalico/canal/master/k8s-install/1.7/canal.yaml" 2>&1
 
-    #CNI_SELECTOR="k8s-app=canal"
-
 elif [ "$CNI_PLUGIN" = "kube" ]; then
 
     echo "Install kube network"
@@ -478,19 +479,25 @@ elif [ "$CNI_PLUGIN" = "kube" ]; then
     kubectl apply -f "https://raw.githubusercontent.com/cloudnativelabs/kube-router/master/daemonset/kubeadm-kuberouter.yaml" 2>&1
     kubectl apply -f "https://raw.githubusercontent.com/cloudnativelabs/kube-router/master/daemonset/kubeadm-kuberouter-all-features.yaml" 2>&1
 
-    #CNI_SELECTOR="k8s-app=kube-router"
-
 elif [ "$CNI_PLUGIN" = "romana" ]; then
 
     echo "Install romana network"
 
     kubectl apply -f https://raw.githubusercontent.com/romana/romana/master/containerize/specs/romana-kubeadm.yml 2>&1
 
-    #CNI_SELECTOR="romana-app=etcd"
 fi
+
+cat > patch.yaml <<EOF
+spec:
+    providerID: 'aws://${ZONEID}/${INSTANCEID}'
+EOF
+
+kubectl patch node ${NODENAME} --patch-file patch.yaml
 
 kubectl label nodes ${NODENAME} "cluster.autoscaler.nodegroup/name=${NODEGROUP_NAME}" \
     "node-role.kubernetes.io/master=" \
+    "topology.kubernetes.io/region=${REGION}" \
+    "topology.kubernetes.io/zone=${ZONEID}" \
     "master=true" --overwrite
 
 kubectl annotate node ${NODENAME} \

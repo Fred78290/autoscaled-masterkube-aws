@@ -19,3 +19,5 @@ kubernetes/*
 config/*
 etc/ssl/*
 bin/*.defs
+
+!**/*.md

@@ -5,33 +5,29 @@ CURDIR=$(dirname $0)
 
 pushd $CURDIR/../
 
-MASTER_IP=$(cat ./cluster/${NODEGROUP_NAME}/manager-ip)
-TOKEN=$(cat ./cluster/${NODEGROUP_NAME}/token)
-CACERT=$(cat ./cluster/${NODEGROUP_NAME}/ca.cert)
+MASTER_IP=$(cat ${TARGET_CLUSTER_LOCATION}/manager-ip)
+TOKEN=$(cat ${TARGET_CLUSTER_LOCATION}/token)
+CACERT=$(cat ${TARGET_CLUSTER_LOCATION}/ca.cert)
 
 export K8NAMESPACE=kube-system
-export ETC_DIR=./config/${NODEGROUP_NAME}/deployment/autoscaler
+export ETC_DIR=${TARGET_DEPLOY_LOCATION}/autoscaler
 export KUBERNETES_TEMPLATE=./templates/autoscaler
 export KUBERNETES_MINOR_RELEASE=$(echo -n $KUBERNETES_VERSION | tr '.' ' ' | awk '{ print $2 }')
 export CLUSTER_AUTOSCALER_VERSION=v1.22.1
 export AWS_AUTOSCALER_VERSION=v1.22.7
 
 case $KUBERNETES_MINOR_RELEASE in
-    20)
-        CLUSTER_AUTOSCALER_VERSION=v1.20.5
-        AWS_AUTOSCALER_VERSION=v1.20.15
+    24)
+        CLUSTER_AUTOSCALER_VERSION=v1.24.7
+        AWS_AUTOSCALER_VERSION=v1.24.5
         ;;
-    21)
-        CLUSTER_AUTOSCALER_VERSION=v1.21.8
-        AWS_AUTOSCALER_VERSION=v1.21.10
+    25)
+        CLUSTER_AUTOSCALER_VERSION=v1.25.5
+        AWS_AUTOSCALER_VERSION=v1.25.2
         ;;
-    22)
-        CLUSTER_AUTOSCALER_VERSION=v1.22.5
-        AWS_AUTOSCALER_VERSION=v1.22.7
-        ;;
-    23)
-        CLUSTER_AUTOSCALER_VERSION=v1.23.1
-        AWS_AUTOSCALER_VERSION=v1.23.4
+    26)
+        CLUSTER_AUTOSCALER_VERSION=v1.26.0
+        AWS_AUTOSCALER_VERSION=v1.26.0
         ;;
 esac
 
@@ -43,7 +39,7 @@ echo $(eval "cat <<EOF
 $(<$KUBERNETES_TEMPLATE/$1.json)
 EOF") | jq . > $ETC_DIR/$1.json
 
-kubectl apply -f $ETC_DIR/$1.json --kubeconfig=./cluster/${NODEGROUP_NAME}/config
+kubectl apply -f $ETC_DIR/$1.json --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
 }
 
 deploy service-account-autoscaler
@@ -62,12 +58,12 @@ elif [ "$LAUNCH_CA" == "LOCAL" ]; then
     GOARCH=$(go env GOARCH)
     nohup ../out/$GOOS/$GOARCH/aws-autoscaler \
         --kubeconfig=$KUBECONFIG \
-        --config=$PWD/config/kubernetes-aws-autoscaler.json \
-        --save=$PWD/config/aws-autoscaler-state.json \
-        --log-level=info 1>>config/aws-autoscaler.log 2>&1 &
+        --config=${TARGET_CONFIG_LOCATION}/kubernetes-vmware-autoscaler.json \
+        --save=${TARGET_CONFIG_LOCATION}/vmware-autoscaler-state.json \
+        --log-level=info 1>>${TARGET_CONFIG_LOCATION}/vmware-autoscaler.log 2>&1 &
     pid="$!"
 
-    echo -n "$pid" > config/aws-autoscaler.pid
+    echo -n "$pid" > ${TARGET_CONFIG_LOCATION}/aws-autoscaler.pid
 
     deploy autoscaler
 else

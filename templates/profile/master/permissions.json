@@ -33,6 +33,11 @@
         },
         {
             "Effect": "Allow",
+            "Action": "elasticfilesystem:*",
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
             "Action": "iam:CreateServiceLinkedRole",
             "Resource": "*",
             "Condition": {

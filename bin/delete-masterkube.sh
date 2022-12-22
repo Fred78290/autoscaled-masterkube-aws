@@ -5,9 +5,13 @@ MASTERKUBE=${NODEGROUP_NAME}-masterkube
 CONTROLNODES=3
 WORKERNODES=3
 FORCE=NO
-AWSDEFS=${CURDIR}/aws.defs
 
-TEMP=$(getopt -o fg:p:r: --long aws-defs:,force,node-group:,profile:,region: -n "$0" -- "$@")
+pushd ${CURDIR}/../
+
+AWSDEFS=${PWD}/bin/aws.defs
+CONFIGURATION_LOCATION=${PWD}/../
+
+TEMP=$(getopt -o fg:p:r: --long configuration-location:,aws-defs:,force,node-group:,profile:,region: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -15,10 +19,6 @@ while true; do
     case "$1" in
         --aws-defs)
             AWSDEFS=$2
-            if [ ! -f ${AWSDEFS} ]; then
-                echo_red "AWS definitions: ${AWSDEFS} not found"
-                exit 1
-            fi
             shift 2
             ;;
         -f|--force)
@@ -37,6 +37,14 @@ while true; do
             NODEGROUP_NAME=$2
             shift 2
             ;;
+        --configuration-location)
+            CONFIGURATION_LOCATION=$2
+            if [ ! -d ${CONFIGURATION_LOCATION} ]; then
+                echo_red "kubernetes output : ${CONFIGURATION_LOCATION} not found"
+                exit 1
+            fi
+            shift 2
+            ;;
         --)
             shift
             break
@@ -48,8 +56,17 @@ while true; do
     esac
 done
 
+if [ ! -f ${AWSDEFS} ]; then
+	echo_red "AWS definitions: ${AWSDEFS} not found"
+	exit 1
+fi
+
 # import aws hidden definitions
 source ${AWSDEFS}
+
+TARGET_CONFIG_LOCATION=${CONFIGURATION_LOCATION}/config/${NODEGROUP_NAME}/config
+TARGET_DEPLOY_LOCATION=${CONFIGURATION_LOCATION}/config/${NODEGROUP_NAME}/deployment
+TARGET_CLUSTER_LOCATION=${CONFIGURATION_LOCATION}/cluster/${NODEGROUP_NAME}
 
 function wait_jobs_finish() {
     while :
@@ -90,8 +107,8 @@ function delete_instance_id() {
 
 pushd ${CURDIR}/../
 
-if [ -f ./cluster/${NODEGROUP_NAME}/buildenv ]; then
-    source ./cluster/${NODEGROUP_NAME}/buildenv
+if [ -f ${TARGET_CONFIG_LOCATION}/buildenv ]; then
+    source ${TARGET_CONFIG_LOCATION}/buildenv
 fi
 
 echo "Delete masterkube ${MASTERKUBE} previous instance"
@@ -126,8 +143,8 @@ if [ "$FORCE" = "YES" ]; then
 
     done
 
-elif [ -f ./cluster/${NODEGROUP_NAME}/config ]; then
-    for INSTANCE_ID in $(kubectl get node -o json --kubeconfig ./cluster/${NODEGROUP_NAME}/config | jq '.items| .[] | .metadata.annotations["cluster.autoscaler.nodegroup/instance-id"]' | tr -d '"')
+elif [ -f ${TARGET_CLUSTER_LOCATION}/config ]; then
+    for INSTANCE_ID in $(kubectl get node -o json --kubeconfig ${TARGET_CLUSTER_LOCATION}/config | jq '.items| .[] | .metadata.annotations["cluster.autoscaler.nodegroup/instance-id"]' | tr -d '"')
     do
         echo "Delete Instance ID: $INSTANCE_ID"
             delete_instance_id "${INSTANCE_ID}" &
@@ -143,7 +160,7 @@ elif [ -f ./cluster/${NODEGROUP_NAME}/config ]; then
 fi
 
 # Delete all alive instances
-for FILE in ./config/${NODEGROUP_NAME}/instance-*.json
+for FILE in ${TARGET_CONFIG_LOCATION}/instance-*.json
 do
     if [ -f $FILE ]; then
         INSTANCE=$(cat $FILE)
@@ -162,10 +179,10 @@ done
 
 wait_jobs_finish
 
-./bin/delete-aws-nlb.sh --profile ${AWS_PROFILE} --region ${AWS_REGION} --name nlb-${MASTERKUBE}
+./bin/delete-aws-nlb.sh --profile ${AWS_PROFILE} --region ${AWS_REGION} --name ${MASTERKUBE}
 
 # Delete DNS entries
-for FILE in config/${NODEGROUP_NAME}/dns-*.json
+for FILE in ${TARGET_CONFIG_LOCATION}/dns-*.json
 do
     if [ -f $FILE ]; then
         DNS=$(cat $FILE | jq '.Changes[0].Action = "DELETE"')
@@ -178,7 +195,7 @@ do
 done
 
 # Delete ENI entries
-for FILE in config/${NODEGROUP_NAME}/eni-*.json
+for FILE in ${TARGET_CONFIG_LOCATION}/eni-*.json
 do
     if [ -f $FILE ]; then
         ENI=$(cat $FILE | jq -r '.NetworkInterfaceId')
@@ -189,11 +206,12 @@ done
 
 ./bin/kubeconfig-delete.sh $MASTERKUBE $NODEGROUP_NAME &> /dev/null
 
-if [ -f ./config/${NODEGROUP_NAME}/aws-autoscaler.pid ]; then
-    kill $(cat ./config/${NODEGROUP_NAME}/aws-autoscaler.pid)
+if [ -f ${TARGET_CONFIG_LOCATION}/aws-autoscaler.pid ]; then
+    kill $(cat ${TARGET_CONFIG_LOCATION}/aws-autoscaler.pid)
 fi
 
-rm -rf ./cluster/${NODEGROUP_NAME}
-rm -rf ./config/${NODEGROUP_NAME}
+rm -rf ${TARGET_CLUSTER_LOCATION}
+rm -rf ${TARGET_CONFIG_LOCATION}
+rm -rf ${TARGET_DEPLOY_LOCATION}
 
 popd

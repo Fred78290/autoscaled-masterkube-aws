@@ -70,6 +70,9 @@
                         },
                         "command": [
                             "/usr/local/bin/aws-autoscaler",
+                            "$EXTERNAL_ETCD_ARGS",
+                            "--src-etcd-ssl-dir=/etc/etcd/ssl",
+                            "--dst-etcd-ssl-dir=/etc/etcd/ssl",
                             "--config=/etc/cluster/kubernetes-aws-autoscaler.json",
                             "--save=/var/run/cluster-autoscaler/aws-autoscaler-state.json",
                             "--log-level=info"
@@ -87,6 +90,14 @@
                             {
                                 "name": "autoscaler-ssh-keys",
                                 "mountPath": "/root/.ssh"
+                            },
+                            {
+                                "name": "etcd-ssl",
+                                "mountPath": "/etc/etcd/ssl"
+                            },
+                            {
+                                "name": "kubernetes-pki",
+                                "mountPath": "/etc/kubernetes/pki"
                             }
                         ]
                     },
@@ -165,6 +176,19 @@
                         "secret": {
                             "secretName": "autoscaler-ssh-keys",
                             "defaultMode": 384
+                        }
+                    },
+                    {
+                        "name": "etcd-ssl",
+                        "secret": {
+                            "secretName": "etcd-ssl",
+                            "defaultMode": 384
+                        }
+                    },
+                    {
+                        "name": "kubernetes-pki",
+                        "configMap": {
+                            "name": "kubernetes-pki"
                         }
                     }
                 ]

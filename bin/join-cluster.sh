@@ -11,9 +11,13 @@ NODEINDEX=0
 MASTER_NODE_ALLOW_DEPLOYMENT=NO
 LOCALHOSTNAME=$(curl -s http://169.254.169.254/latest/meta-data/local-hostname)
 INSTANCEID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+ZONEID=$(curl http://169.254.169.254/latest/meta-data/placement/availability-zone)
 REGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)
 INSTANCENAME=$(aws ec2  describe-instances --region $REGION --instance-ids $INSTANCEID | jq -r '.Reservations[0].Instances[0].Tags[]|select(.Key == "Name")|.Value')
 IPADDR=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+
+APISERVER_ADVERTISE_ADDRESS="${IPADDR}"
+APISERVER_ADVERTISE_PORT="6443"
 
 MASTER_IP=$(cat ./cluster/manager-ip)
 TOKEN=$(cat ./cluster/token)
@@ -48,10 +52,6 @@ while true; do
         ;;
     --join-master)
         MASTER_IP=$2
-        shift 2
-        ;;
-    -g|--node-group)
-        NODEGROUP_NAME="$2"
         shift 2
         ;;
     --allow-deployment)
@@ -123,7 +123,7 @@ export KUBECONFIG=/etc/kubernetes/admin.conf
 
 cat > patch.yaml <<EOF
 spec:
-  providerID: '${SCHEME}://${NODEGROUP_NAME}/object?type=node&name=${INSTANCENAME}'
+    providerID: 'aws://${ZONEID}/${INSTANCEID}'
 EOF
 
 kubectl patch node ${NODENAME} --patch-file patch.yaml
@@ -132,6 +132,8 @@ if [ "$HA_CLUSTER" = "true" ]; then
     kubectl label nodes ${NODENAME} \
         "cluster.autoscaler.nodegroup/name=${NODEGROUP_NAME}" \
         "node-role.kubernetes.io/master=" \
+        "topology.kubernetes.io/region=${REGION}" \
+        "topology.kubernetes.io/zone=${ZONEID}" \
         "master=true" \
         --overwrite
 
@@ -142,6 +144,8 @@ else
     kubectl label nodes ${NODENAME} \
         "cluster.autoscaler.nodegroup/name=${NODEGROUP_NAME}" \
         "node-role.kubernetes.io/worker=" \
+        "topology.kubernetes.io/region=${REGION}" \
+        "topology.kubernetes.io/zone=${ZONEID}" \
         "worker=true" \
         --overwrite
 fi

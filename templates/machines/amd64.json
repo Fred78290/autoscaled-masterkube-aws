@@ -69,6 +69,86 @@
         "memsize": 32768,
         "vcpus": 8
     },
+    "c5.large": {
+        "vcpus": 2,
+        "memsize": 4096,
+        "price": 0.101
+    },
+    "c5.xlarge": {
+        "vcpus": 4,
+        "memsize": 8192,
+        "price": 0.202
+    },
+    "c5.2xlarge": {
+        "vcpus": 8,
+        "memsize": 16384,
+        "price": 0.404
+    },
+    "c5.4xlarge": {
+        "vcpus": 16,
+        "memsize": 32768,
+        "price": 0.808
+    },
+    "c5.9xlarge": {
+        "vcpus": 36,
+        "memsize": 73728,
+        "price": 1.818
+    },
+    "c5.12xlarge": {
+        "vcpus": 48,
+        "memsize": 98304,
+        "price": 2.424
+    },
+    "c5.18xlarge": {
+        "vcpus": 72,
+        "memsize": 147456,
+        "price": 3.636
+    },
+    "c5.24xlarge": {
+        "vcpus": 96,
+        "memsize": 196608,
+        "price": 4.848
+    },
+    "c5a.large": {
+        "vcpus": 2,
+        "memsize": 4096,
+        "price": 0.091
+    },
+    "c5a.xlarge": {
+        "vcpus": 4,
+        "memsize": 8192,
+        "price": 0.182
+    },
+    "c5a.2xlarge": {
+        "vcpus": 8,
+        "memsize": 16384,
+        "price": 0.364
+    },
+    "c5a.4xlarge": {
+        "vcpus": 16,
+        "memsize": 32768,
+        "price": 0.728
+    },
+    "c5a.8xlarge": {
+        "vcpus": 32,
+        "memsize": 65536,
+        "price": 1.456
+    },
+    "c5a.12xlarge": {
+        "vcpus": 48,
+        "memsize": 98304,
+        "price": 2.184
+    },
+    "c5a.16xlarge": {
+        "vcpus": 64,
+        "memsize": 131072,
+        "price": 2.912
+    },
+    "c5a.24xlarge": {
+        "vcpus": 96,
+        "memsize": 196608,
+        "price": 4.368
+    },
     "m5a.large": {
         "price": 0.096,
         "memsize": 8192,
@@ -138,5 +218,220 @@
         "price": 3.424,
         "memsize": 196608,
         "vcpus": 64
+    },
+    "r6i.large": {
+        "vcpus": 2,
+        "memsize": 16384,
+        "price": 0.148
+    },
+    "r6i.xlarge": {
+        "vcpus": 4,
+        "memsize": 32768,
+        "price": 0.296
+    },
+    "r6i.2xlarge": {
+        "vcpus": 8,
+        "memsize": 65536,
+        "price": 0.592
+    },
+    "r5.large": {
+        "vcpus": 2,
+        "memsize": 16384,
+        "price": 0.148
+    },
+    "r5.xlarge": {
+        "vcpus": 4,
+        "memsize": 32768,
+        "price": 0.296
+    },
+    "r5.2xlarge": {
+        "vcpus": 8,
+        "memsize": 65536,
+        "price": 0.592
+    },
+    "r5.4xlarge": {
+        "vcpus": 16,
+        "memsize": 131072,
+        "price": 1.184
+    },
+    "r5.8xlarge": {
+        "vcpus": 32,
+        "memsize": 262144,
+        "price": 2.368
+    },
+    "r5.12xlarge": {
+        "vcpus": 48,
+        "memsize": 393216,
+        "price": 3.552
+    },
+    "r5.16xlarge": {
+        "vcpus": 64,
+        "memsize": 524288,
+        "price": 4.736
+    },
+    "r5.24xlarge": {
+        "vcpus": 96,
+        "memsize": 786432,
+        "price": 7.104
+    },
+    "r5a.large": {
+        "vcpus": 2,
+        "memsize": 16384,
+        "price": 0.133
+    },
+    "r5a.xlarge": {
+        "vcpus": 4,
+        "memsize": 32768,
+        "price": 0.266
+    },
+    "r5a.2xlarge": {
+        "vcpus": 8,
+        "memsize": 65536,
+        "price": 0.532
+    },
+    "r5a.4xlarge": {
+        "vcpus": 16,
+        "memsize": 131072,
+        "price": 1.064
+    },
+    "r5a.8xlarge": {
+        "vcpus": 32,
+        "memsize": 262144,
+        "price": 2.128
+    },
+    "r5a.12xlarge": {
+        "vcpus": 48,
+        "memsize": 393216,
+        "price": 3.192
+    },
+    "r5a.16xlarge": {
+        "vcpus": 64,
+        "memsize": 524288,
+        "price": 4.256
+    },
+    "r5a.24xlarge": {
+        "vcpus": 96,
+        "memsize": 786432,
+        "price": 6.384
+    },
+    "r6i.4xlarge": {
+        "vcpus": 16,
+        "memsize": 131072,
+        "price": 1.184
+    },
+    "r6i.8xlarge": {
+        "vcpus": 32,
+        "memsize": 262144,
+        "price": 2.368
+    },
+    "r6i.12xlarge": {
+        "vcpus": 48,
+        "memsize": 393216,
+        "price": 3.552
+    },
+    "r6i.16xlarge": {
+        "vcpus": 64,
+        "memsize": 524288,
+        "price": 4.736
+    },
+    "r6i.24xlarge": {
+        "vcpus": 96,
+        "memsize": 786432,
+        "price": 7.104
+    },
+    "r6i.32xlarge": {
+        "vcpus": 128,
+        "memsize": 1048576,
+        "price": 9.472
+    },
+    "m6i.large": {
+        "vcpus": 2,
+        "memsize": 8192,
+        "price": 0.112
+    },
+    "m6i.xlarge": {
+        "vcpus": 4,
+        "memsize": 16384,
+        "price": 0.224
+    },
+    "m6i.2xlarge": {
+        "vcpus": 8,
+        "memsize": 32768,
+        "price": 0.448
+    },
+    "m6i.4xlarge": {
+        "vcpus": 16,
+        "memsize": 65536,
+        "price": 0.896
+    },
+    "m6i.8xlarge": {
+        "vcpus": 32,
+        "memsize": 131072,
+        "price": 1.792
+    },
+    "m6i.12xlarge": {
+        "vcpus": 48,
+        "memsize": 196608,
+        "price": 2.688
+    },
+    "m6i.16xlarge": {
+        "vcpus": 64,
+        "memsize": 262144,
+        "price": 3.584
+    },
+    "m6i.24xlarge": {
+        "vcpus": 96,
+        "memsize": 393216,
+        "price": 5.376
+    },
+    "m6i.32xlarge": {
+        "vcpus": 128,
+        "memsize": 524288,
+        "price": 7.168
+    },
+    "c6i.large": {
+        "vcpus": 2,
+        "memsize": 4096,
+        "price": 0.101
+    },
+    "c6i.xlarge": {
+        "vcpus": 4,
+        "memsize": 8192,
+        "price": 0.202
+    },
+    "c6i.2xlarge": {
+        "vcpus": 8,
+        "memsize": 16384,
+        "price": 0.404
+    },
+    "c6i.4xlarge": {
+        "vcpus": 16,
+        "memsize": 32768,
+        "price": 0.808
+    },
+    "c6i.8xlarge": {
+        "vcpus": 32,
+        "memsize": 65536,
+        "price": 1.616
+    },
+    "c6i.12xlarge": {
+        "vcpus": 48,
+        "memsize": 98304,
+        "price": 2.424
+    },
+    "c6i.16xlarge": {
+        "vcpus": 64,
+        "memsize": 131072,
+        "price": 3.232
+    },
+    "c6i.24xlarge": {
+        "vcpus": 96,
+        "memsize": 196608,
+        "price": 4.848
+    },
+    "c6i.32xlarge": {
+        "vcpus": 128,
+        "memsize": 262144,
+        "price": 6.464
     }
 }
