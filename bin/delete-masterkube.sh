@@ -9,7 +9,7 @@ FORCE=NO
 pushd ${CURDIR}/../
 
 AWSDEFS=${PWD}/bin/aws.defs
-CONFIGURATION_LOCATION=${PWD}/../
+CONFIGURATION_LOCATION=${PWD}
 
 TEMP=$(getopt -o fg:p:r: --long configuration-location:,aws-defs:,force,node-group:,profile:,region: -n "$0" -- "$@")
 
@@ -146,15 +146,17 @@ if [ "$FORCE" = "YES" ]; then
 elif [ -f ${TARGET_CLUSTER_LOCATION}/config ]; then
     for INSTANCE_ID in $(kubectl get node -o json --kubeconfig ${TARGET_CLUSTER_LOCATION}/config | jq '.items| .[] | .metadata.annotations["cluster.autoscaler.nodegroup/instance-id"]' | tr -d '"')
     do
-        echo "Delete Instance ID: $INSTANCE_ID"
-            delete_instance_id "${INSTANCE_ID}" &
+        echo "Delete k8s node Instance ID: $INSTANCE_ID"
+        delete_instance_id "${INSTANCE_ID}" &
     done
+
+    sleep 5
 
     INSTANCE=$(aws ec2  describe-instances --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters "Name=tag:Name,Values=$MASTERKUBE" | jq -r '.Reservations[].Instances[]|select(.State.Code == 16)')
     INSTANCE_ID=$(echo $INSTANCE | jq -r '.InstanceId // ""')
 
     if [ ! -z "$INSTANCE_ID" ]; then
-        echo "Delete Instance ID: $INSTANCE_ID"
+        echo "Delete simple Instance ID: $INSTANCE_ID"
         delete_instance_id "${INSTANCE_ID}" &
     fi
 fi

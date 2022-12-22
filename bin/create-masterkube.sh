@@ -1851,7 +1851,6 @@ function create_network_interfaces() {
 #
 #===========================================================================================================================================
 function create_2_extras_eni() {
-    set -x
     local MORE_ADDRESSES=()
     local VPC_LENGTH=${#VPC_PRIVATE_SUBNET_IDS[@]}
     local SUBNET_INDEX=$(( $((CONTROLNODE_INDEX - 1)) % $VPC_LENGTH ))
@@ -1860,8 +1859,9 @@ function create_2_extras_eni() {
     do
         if [ ${SUBNET_INDEX} != ${INDEX} ]; then
             local ENIINDEX=$((INDEX + ${LASTNODE_INDEX} + 1))
+            local NODE_INDEX=$((INDEX + 1))
 
-            create_network_interfaces ${ENIINDEX} ${NODEGROUP_NAME}-master-$(named_index_suffix $INDEX)
+            create_network_interfaces ${ENIINDEX} ${NODEGROUP_NAME}-master-$(named_index_suffix $NODE_INDEX)
 
             local ENI=$(cat ${TARGET_CONFIG_LOCATION}/eni-$(named_index_suffix ${ENIINDEX}).json)
             local IPADDR=$(echo $ENI | jq -r '.PrivateIpAddresses[]|select(.Primary == true)|.PrivateIpAddress')
@@ -1871,7 +1871,7 @@ function create_2_extras_eni() {
             MORE_ADDRESSES+=(${PRIVATEDNS})
         fi
     done
-    set +x
+
     echo ${MORE_ADDRESSES[@]}
 }
 
