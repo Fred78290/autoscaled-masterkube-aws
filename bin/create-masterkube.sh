@@ -185,12 +185,13 @@ Options are:
 --trace | -x                                     # Trace execution
 --delete                                         # Delete cluster and exit
 --create-image-only                              # Create image only
---cache                                          # Cache location, default ${CACHE}
+--cache=<path>                                   # Cache location, default ${CACHE}
+
 ### Flags to set some location informations
 
---configuration-location                         # Specify where configuration will be stored, default ${CONFIGURATION_LOCATION}
---ssl-location                                   # Specify where the etc/ssl dir is stored, default ${SSL_LOCATION}
---aws-defs                                       # Specify the AWS defintions file, default ${AWSDEFS}
+--configuration-location=<path>                  # Specify where configuration will be stored, default ${CONFIGURATION_LOCATION}
+--ssl-location=<path>                            # Specify where the etc/ssl dir is stored, default ${SSL_LOCATION}
+--aws-defs=<path>                                # Specify the AWS defintions file, default ${AWSDEFS}
 
 ### Flags to set AWS informations
 
@@ -203,8 +204,10 @@ Options are:
 --ha-cluster | -c                                # Allow to create an HA cluster, default ${HA_CLUSTER}
 --worker-nodes=<value>                           # Specify the number of worker nodes created in HA cluster, default ${WORKERNODES}
 --container-runtime=<docker|containerd|cri-o>    # Specify which OCI runtime to use, default ${CONTAINER_ENGINE}
---internet-facing/--no-internet-facing           # Specify if the cluster is exposed on internet port: 80 443, default ${EXPOSE_PUBLIC_CLUSTER}
---max-pods                                       # Specify the max pods per created VM, default ${MAX_PODS}
+                                                 # use aws for internal AWS cloud provider, external for external AWS cloud provider, none for any provider
+--internet-facing                                # Specify than the cluster is exposed on internet port: 80 443, default ${EXPOSE_PUBLIC_CLUSTER}
+--no-internet-facing                             # Specify than the cluster is not exposed on internet, default ${EXPOSE_PUBLIC_CLUSTER}
+--max-pods=<value>                               # Specify the max pods per created VM, default ${MAX_PODS}
 --create-nginx-apigateway                        # Specify if we must create NGINX instance to install an apigateway, default ${USE_NGINX_GATEWAY}
 
 ### Design domain
@@ -215,8 +218,10 @@ Options are:
 
 ### Flags in single master node only
 
---control-plane-public/--no-control-plane-public # Specify if master is hosted in public subnet, default ${CONTROLPLANE_USE_PUBLICIP}
---worker-node-public/--no-worker-node-public     # Specify if worker nodes asre hosted in public subnet, default ${WORKERNODE_USE_PUBLICIP}
+--control-plane-public                           # Specify than control plane are hosted in public subnet, default ${CONTROLPLANE_USE_PUBLICIP}
+--no-control-plane-public                        # Specify than control plane are hosted in private subnet, default ${CONTROLPLANE_USE_PUBLICIP}
+--worker-node-public                             # Specify than worker nodes are hosted in public subnet, default ${WORKERNODE_USE_PUBLICIP}
+--no-worker-node-public                          # Specify than worker nodes are hosted in private subnet, default ${WORKERNODE_USE_PUBLICIP}
 
 ### Flags in ha mode only
 
