@@ -84,6 +84,14 @@ export VPC_PRIVATE_SUBNET_ID= #"<to be filled>"
 export VPC_PRIVATE_SECURITY_GROUPID= #"<to be filled>"
 export ROUTE53_ZONEID= #"<to be filled>"
 
+# optional defined in private aws.defs for debug aws-autoscaler locally
+export AWS_ACCESSKEY= #"<to be filled>"
+export AWS_SECRETKEY= #"<to be filled>"
+export AWS_ROUTE53_ACCESSKEY= #"<to be filled>"
+export AWS_ROUTE53_SECRETKEY= #"<to be filled>"
+export AWS_TOKEN= #"<to be filled>"
+export AWS_ROUTE53_TOKEN= #"<to be filled>"
+
 export EXPOSE_PUBLIC_CLUSTER=true
 export CONTROLPLANE_USE_PUBLICIP=true
 export WORKERNODE_USE_PUBLICIP=false
