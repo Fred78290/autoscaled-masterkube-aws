@@ -161,6 +161,7 @@ elif [ -f ${TARGET_CLUSTER_LOCATION}/config ]; then
     fi
 fi
 
+sleep 5
 # Delete all alive instances
 for FILE in ${TARGET_CONFIG_LOCATION}/instance-*.json
 do

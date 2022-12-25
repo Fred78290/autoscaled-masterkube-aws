@@ -2120,8 +2120,8 @@ AUTOSCALER_CONFIG=$(cat <<EOF
     "image": "${TARGET_IMAGE}",
     "cloud-provider": "${CLOUD_PROVIDER}",
     "optionals": {
-        "pricing": true,
-        "getAvailableMachineTypes": true,
+        "pricing": false,
+        "getAvailableMachineTypes": false,
         "newNodeGroup": false,
         "templateNodeInfo": false,
         "createNodeGroup": false,
