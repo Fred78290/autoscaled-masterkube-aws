@@ -69,16 +69,7 @@ TARGET_DEPLOY_LOCATION=${CONFIGURATION_LOCATION}/config/${NODEGROUP_NAME}/deploy
 TARGET_CLUSTER_LOCATION=${CONFIGURATION_LOCATION}/cluster/${NODEGROUP_NAME}
 
 function wait_jobs_finish() {
-    while :
-    do
-        if test "$(jobs | wc -l)" -eq 0; then
-            break
-        fi
-
-    wait -n
-    done
-
-    wait
+    wait $(jobs -p)
 }
 
 function wait_instance_status() {

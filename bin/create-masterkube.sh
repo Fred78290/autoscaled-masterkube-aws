@@ -108,6 +108,29 @@ PRIVATE_ADDR_IPS=()
 PUBLIC_ADDR_IPS=()
 DELETE_CLUSTER=NO
 
+if [ "$(uname -s)" == "Darwin" ]; then
+    if [ -z "$(command -v gsed)" ]; then
+        echo_red_bold "You must install gnu sed with brew (brew install gsed), this script is not compatible with the native macos sed"
+        exit 1
+    fi
+
+    if [ -z "$(command -v gbase64)" ]; then
+        echo_red_bold "You must install gnu base64 with brew (brew install coreutils), this script is not compatible with the native macos base64"
+        exit 1
+    fi
+
+    if [ ! -e /usr/local/opt/gnu-getopt/bin/getopt ]; then
+        echo_red_bold "You must install gnu gnu-getopt with brew (brew install coreutils), this script is not compatible with the native macos base64"
+        exit 1
+    fi
+
+    shopt -s expand_aliases
+
+    alias base64=gbase64
+    alias sed=gsed
+    alias getopt=/usr/local/opt/gnu-getopt/bin/getopt
+fi
+
 # import hidded definitions
 if [ -f ${AWSDEFS} ]; then
     source ${AWSDEFS}
@@ -125,16 +148,7 @@ function verbose() {
 }
 
 function wait_jobs_finish() {
-    while :
-    do
-        if test "$(jobs | wc -l)" -eq 0; then
-            break
-        fi
-
-    wait -n
-    done
-
-    wait
+    wait $(jobs -p)
 }
 
 function echo_blue_dot() {
@@ -283,29 +297,6 @@ Options are:
 --unremovable-node-recheck-timeout=<value>       # autoscaler flag, default: ${UNREMOVABLENODERECHECKTIMEOUT}
 EOF
 }
-
-if [ "$(uname -s)" == "Darwin" ]; then
-    if [ -z "$(command -v gsed)" ]; then
-        echo_red_bold "You must install gnu sed with brew (brew install gsed), this script is not compatible with the native macos sed"
-        exit 1
-    fi
-
-    if [ -z "$(command -v gbase64)" ]; then
-        echo_red_bold "You must install gnu base64 with brew (brew install coreutils), this script is not compatible with the native macos base64"
-        exit 1
-    fi
-
-    if [ ! -e /usr/local/opt/gnu-getopt/bin/getopt ]; then
-        echo_red_bold "You must install gnu gnu-getopt with brew (brew install coreutils), this script is not compatible with the native macos base64"
-        exit 1
-    fi
-
-    shopt -s expand_aliases
-
-    alias base64=gbase64
-    alias sed=gsed
-    alias getopt=/usr/local/opt/gnu-getopt/bin/getopt
-fi
 
 TEMP=$(getopt -o xvhrceuwa::p:r:k:n:p:s:t: --long cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
 
@@ -2071,7 +2062,7 @@ else
 
     LOAD_BALANCER_IP=${PRIVATE_ADDR_IPS[0]}
     IPADDR="${PRIVATE_ADDR_IPS[${CONTROLNODE_INDEX}]}"
-    PRIVATEDNS=$(echo ${LAUNCHED_INSTANCE[${CONTROLNODE_INDEX}]} | jq -r '.PrivateDnsName')
+    PRIVATEDNS=$(echo ${LAUNCHED_INSTANCES[${CONTROLNODE_INDEX}]} | jq -r '.PrivateDnsName')
     JOIN_IP="${IPADDR}:6443"
 
     echo_grey "IPADDR=${PRIVATEDNS}:${IPADDR} IPRESERVED2=${PRIVATEDNS2}:${IPRESERVED2} IPRESERVED3=${PRIVATEDNS3}:${IPRESERVED3}"
