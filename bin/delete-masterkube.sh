@@ -6,7 +6,52 @@ CONTROLNODES=3
 WORKERNODES=3
 FORCE=NO
 
-pushd ${CURDIR}/../
+function echo_blue_dot() {
+	>&2 echo -n -e "\x1B[90m\x1B[39m\x1B[1m\x1B[34m.\x1B[0m\x1B[39m"
+}
+
+function echo_blue_dot_title() {
+	# echo message in blue and bold
+	>&2 echo -n -e "\x1B[90m= \x1B[39m\x1B[1m\x1B[34m$1\x1B[0m\x1B[39m"
+}
+
+function echo_blue_bold() {
+	# echo message in blue and bold
+	>&2 echo -e "\x1B[90m= \x1B[39m\x1B[1m\x1B[34m$1\x1B[0m\x1B[39m"
+}
+
+function echo_title() {
+	# echo message in blue and bold
+    echo_line
+	echo_blue_bold "$1"
+    echo_line
+}
+
+function echo_grey() {
+	# echo message in light grey
+	>&2 echo -e "\x1B[90m$1\x1B[39m"
+}
+
+function echo_red() {
+	# echo message in red
+	>&2 echo -e "\x1B[31m$1\x1B[39m"
+}
+
+function echo_red_bold() {
+	# echo message in blue and bold
+	>&2 echo -e "\x1B[90m= \x1B[31m\x1B[1m\x1B[31m$1\x1B[0m\x1B[39m"
+}
+
+function echo_separator() {
+    echo_line
+	>&2 echo
+	>&2 echo
+}
+
+function echo_line() {
+	echo_grey "============================================================================================================================="
+}
+
 
 AWSDEFS=${PWD}/bin/aws.defs
 CONFIGURATION_LOCATION=${PWD}
@@ -50,7 +95,7 @@ while true; do
             break
             ;;
         *)
-            echo "$1 - Internal error!"
+            echo_red "$1 - Internal error!"
             exit 1
             ;;
     esac
@@ -93,7 +138,7 @@ function delete_instance_id() {
 
     wait_instance_status $INSTANCE_ID 48
 
-    echo "Terminated instance: ${INSTANCE_ID}"
+    echo_blue_bold "Terminated instance: ${INSTANCE_ID}"
 }
 
 pushd ${CURDIR}/../
@@ -102,7 +147,7 @@ if [ -f ${TARGET_CONFIG_LOCATION}/buildenv ]; then
     source ${TARGET_CONFIG_LOCATION}/buildenv
 fi
 
-echo "Delete masterkube ${MASTERKUBE} previous instance"
+echo_title "Delete masterkube ${MASTERKUBE} previous instance"
 
 if [ "$(uname -s)" == "Linux" ]; then
     SED=sed
@@ -128,7 +173,7 @@ if [ "$FORCE" = "YES" ]; then
         INSTANCE_ID=$(echo $INSTANCE | jq -r '.InstanceId // ""')
 
         if [ ! -z "$INSTANCE_ID" ]; then
-            echo "Delete VM: $MASTERKUBE_NODE"
+            echo_blue_bold "Delete VM: $MASTERKUBE_NODE"
             delete_instance_id "${INSTANCE_ID}" &
         fi
 
@@ -137,7 +182,7 @@ if [ "$FORCE" = "YES" ]; then
 elif [ -f ${TARGET_CLUSTER_LOCATION}/config ]; then
     for INSTANCE_ID in $(kubectl get node -o json --kubeconfig ${TARGET_CLUSTER_LOCATION}/config | jq '.items| .[] | .metadata.annotations["cluster.autoscaler.nodegroup/instance-id"]' | tr -d '"')
     do
-        echo "Delete k8s node Instance ID: $INSTANCE_ID"
+        echo_blue_bold "Delete k8s node Instance ID: $INSTANCE_ID"
         delete_instance_id "${INSTANCE_ID}" &
     done
 
@@ -147,7 +192,7 @@ elif [ -f ${TARGET_CLUSTER_LOCATION}/config ]; then
     INSTANCE_ID=$(echo $INSTANCE | jq -r '.InstanceId // ""')
 
     if [ ! -z "$INSTANCE_ID" ]; then
-        echo "Delete simple Instance ID: $INSTANCE_ID"
+        echo_blue_bold "Delete simple Instance ID: $INSTANCE_ID"
         delete_instance_id "${INSTANCE_ID}" &
     fi
 fi
@@ -164,7 +209,7 @@ do
             STATUSCODE=$(aws ec2  describe-instances --profile ${AWS_PROFILE} --region ${AWS_REGION} --instance-ids "${INSTANCE_ID}" | jq -r '.Reservations[0].Instances[0].State.Code//"48"')
 
             if [ ${STATUSCODE} -eq 16 ]; then
-                echo "Delete Instance ID: $INSTANCE_ID"
+                echo_blue_bold "Delete Instance ID: $INSTANCE_ID"
                 delete_instance_id "${INSTANCE_ID}" &
             fi
         fi
@@ -193,7 +238,7 @@ for FILE in ${TARGET_CONFIG_LOCATION}/eni-*.json
 do
     if [ -f $FILE ]; then
         ENI=$(cat $FILE | jq -r '.NetworkInterfaceId')
-        echo "Delete ENI: ${ENI}"
+        echo_blue_bold "Delete ENI: ${ENI}"
         aws ec2 delete-network-interface --profile ${AWS_PROFILE} --region ${AWS_REGION} --network-interface-id ${ENI} &> /dev/null
     fi
 done
