@@ -221,7 +221,7 @@ do
         echo $DNS | jq . > $FILE
 
         aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
-            --hosted-zone-id ${ROUTE53_ZONEID} \
+            --hosted-zone-id ${AWS_ROUTE53_ZONE_ID} \
             --change-batch file://${FILE} &> /dev/null
     fi
 done
