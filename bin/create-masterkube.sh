@@ -1087,6 +1087,9 @@ if [ ${HA_CLUSTER} = "true" ]; then
             CONTROLNODE_INDEX=1
             LASTNODE_INDEX=$((WORKERNODES + ${CONTROLNODES}))
         fi
+    elif [ "${CONTROLPLANE_USE_PUBLICIP}" = "true" ]; then
+        CONTROLNODE_INDEX=0
+        LASTNODE_INDEX=$((WORKERNODES + ${CONTROLNODES} -1))
     else
         CONTROLNODE_INDEX=${#VPC_PUBLIC_SUBNET_IDS[*]}
         LASTNODE_INDEX=$((WORKERNODES + ${CONTROLNODES} + ${#VPC_PUBLIC_SUBNET_IDS[*]} - 1))
@@ -1248,46 +1251,52 @@ EOF
         echo_title "Clone ${TARGET_IMAGE} to ${MASTERKUBE_NODE}"
 
         if [ "${HA_CLUSTER}" = "true" ]; then
+
             if [ ${INDEX} -lt ${CONTROLNODE_INDEX} ]; then
                 # NGINX Load blancer
                 MACHINE_TYPE=${NGINX_MACHINE}
 
                 # Use subnet public for NGINX Load balancer
                 if [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ]; then
-                    PUBLIC_IP_OPTIONS=--associate-public-ip-address
                     PUBLICIP=true
-                    SUBNET_INDEX=$(( $((NODEINDEX - 1)) % ${#VPC_PUBLIC_SUBNET_IDS[@]} ))
-                    SUBNETID="${VPC_PUBLIC_SUBNET_IDS[${SUBNET_INDEX}]}"
-                    SGID="${VPC_PUBLIC_SECURITY_GROUPID}"
                     IAM_PROFILE_OPTIONS=
                 fi
             elif [ ${INDEX} -lt ${WORKERNODE_INDEX} ]; then
+                PUBLICIP=${CONTROLPLANE_USE_PUBLICIP}
                 IAM_PROFILE_OPTIONS="--iam-instance-profile Arn=${MASTER_INSTANCE_PROFILE_ARN}"
                 MACHINE_TYPE=${CONTROL_PLANE_MACHINE}
+            else
+                PUBLICIP=${WORKERNODE_USE_PUBLICIP}
             fi
+
         elif [ ${INDEX} -lt ${WORKERNODE_INDEX} ]; then
+
             MACHINE_TYPE=${CONTROL_PLANE_MACHINE}
 
-            if [ ${INDEX} = ${CONTROLNODE_INDEX} ] && [ "${CONTROLPLANE_USE_PUBLICIP}" = "true" ]; then
-                PUBLIC_IP_OPTIONS=--associate-public-ip-address
-                PUBLICIP=true
-                SUBNET_INDEX=$(( $((NODEINDEX - 1)) % ${#VPC_PUBLIC_SUBNET_IDS[@]} ))
-                SUBNETID="${VPC_PUBLIC_SUBNET_IDS[${SUBNET_INDEX}]}"
-
-                SGID="${VPC_PUBLIC_SECURITY_GROUPID}"
-                IAM_PROFILE_OPTIONS="--iam-instance-profile Arn=${MASTER_INSTANCE_PROFILE_ARN}"
             # Use subnet public for NGINX Load balancer
-            elif [ ${INDEX} -lt ${CONTROLNODE_INDEX} ] && [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ]; then
-                PUBLIC_IP_OPTIONS=--associate-public-ip-address
-                PUBLICIP=true
-                SUBNET_INDEX=$(( $((NODEINDEX - 1)) % ${#VPC_PUBLIC_SUBNET_IDS[@]} ))
-                SUBNETID="${VPC_PUBLIC_SUBNET_IDS[${SUBNET_INDEX}]}"
-
-                SGID="${VPC_PUBLIC_SECURITY_GROUPID}"
-                IAM_PROFILE_OPTIONS=
+            if [ ${INDEX} -lt ${CONTROLNODE_INDEX} ]; then
+                if [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ]; then
+                    PUBLICIP=true
+                    IAM_PROFILE_OPTIONS=true
+                fi
+            elif [ ${INDEX} = ${CONTROLNODE_INDEX} ]; then
+                if [ "${CONTROLPLANE_USE_PUBLICIP}" = "true" ]; then
+                    PUBLICIP=true
+                    IAM_PROFILE_OPTIONS="--iam-instance-profile Arn=${MASTER_INSTANCE_PROFILE_ARN}"
+                fi
+            else
+                PUBLICIP=${WORKERNODE_USE_PUBLICIP}
             fi
+
         fi
         
+        if [ "${PUBLICIP}" = "true" ]; then
+            PUBLIC_IP_OPTIONS=--associate-public-ip-address
+            SUBNET_INDEX=$(( $((NODEINDEX - 1)) % ${#VPC_PUBLIC_SUBNET_IDS[@]} ))
+            SUBNETID="${VPC_PUBLIC_SUBNET_IDS[${SUBNET_INDEX}]}"
+            SGID="${VPC_PUBLIC_SECURITY_GROUPID}"
+        fi
+
         if [ "${PUBLICIP}" = "true" ] || [ -z ${NETWORK_INTERFACE_ID} ]; then
             echo_grey "= Launch Instance ${MASTERKUBE_NODE} with subnetid ${SUBNETID} in security group ${SGID}"
             LAUNCHED_INSTANCE=$(aws ec2 run-instances \
