@@ -142,18 +142,11 @@ function delete_instance_id() {
     echo_blue_bold "Terminated instance: ${INSTANCE_ID}"
 }
 
-
 if [ -f ${TARGET_CONFIG_LOCATION}/buildenv ]; then
     source ${TARGET_CONFIG_LOCATION}/buildenv
 fi
 
 echo_title "Delete masterkube ${MASTERKUBE} previous instance"
-
-if [ "$(uname -s)" == "Linux" ]; then
-    SED=sed
-else
-    SED=gsed
-fi
 
 if [ "$FORCE" = "YES" ]; then
     TOTALNODES=$((WORKERNODES + $CONTROLNODES))
