@@ -642,6 +642,21 @@ case "--${CLOUD_PROVIDER}" in
         ;;
 esac
 
+if [ "${CONTROLPLANE_USE_PUBLICIP}" = "true" ]; then
+    PREFER_SSH_PUBLICIP=NO
+
+    if [ "${USE_NGINX_GATEWAY}" = "YES" ] || [ "${USE_NLB}" = "YES" ] || [ "${EXPOSE_PUBLIC_CLUSTER}" = "false" ]; then
+        echo_red_bold "Control plane can not have public IP because nginx gatewaway or NLB is required or cluster must not be exposed to internet"
+        exit 1
+    fi
+
+    if [ "${WORKERNODE_USE_PUBLICIP}" = "true" ]; then
+        echo_red_bold "Worker node can not have a public IP when control plane does not have public IP"
+        exit 1
+    fi
+
+fi
+
 export TARGET_CONFIG_LOCATION=${CONFIGURATION_LOCATION}/config/${NODEGROUP_NAME}/config
 export TARGET_DEPLOY_LOCATION=${CONFIGURATION_LOCATION}/config/${NODEGROUP_NAME}/deployment
 export TARGET_CLUSTER_LOCATION=${CONFIGURATION_LOCATION}/cluster/${NODEGROUP_NAME}
