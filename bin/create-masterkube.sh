@@ -8,8 +8,18 @@
 set -e
 
 CURDIR=$(dirname $0)
+OUTPUT=${CURDIR}/../config/deploy.log
+TIMEFORMAT='It takes %R seconds to complete this task...'
 
-pushd ${CURDIR}/../
+echo -n > ${OUTPUT}
+
+echo "==================================================================================" | tee -a ${OUTPUT}
+echo "Start at: " $(date) | tee -a ${OUTPUT}
+echo "==================================================================================" | tee -a ${OUTPUT}
+echo | tee -a ${OUTPUT}
+
+time {
+
 pushd ${CURDIR}/../ &> /dev/null
 
 export PATH=${PWD}/bin:${PATH}
@@ -2268,3 +2278,8 @@ if [ ! -z ${GODADDY_API_KEY} ]; then
 fi
 
 popd &> /dev/null
+
+} 2>&1 | tee -a ${OUTPUT}
+echo "==================================================================================" | tee -a ${OUTPUT}
+echo "= End at: " $(date) | tee -a ${OUTPUT}
+echo "==================================================================================" | tee -a ${OUTPUT}
