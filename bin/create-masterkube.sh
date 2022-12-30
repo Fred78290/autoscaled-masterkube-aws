@@ -632,6 +632,15 @@ case "--${CLOUD_PROVIDER}" in
         ;;
 esac
 
+export TARGET_CONFIG_LOCATION=${CONFIGURATION_LOCATION}/config/${NODEGROUP_NAME}/config
+export TARGET_DEPLOY_LOCATION=${CONFIGURATION_LOCATION}/config/${NODEGROUP_NAME}/deployment
+export TARGET_CLUSTER_LOCATION=${CONFIGURATION_LOCATION}/cluster/${NODEGROUP_NAME}
+
+[ -z "${AWS_PROFILE_ROUTE53}" ] && AWS_PROFILE_ROUTE53=${AWS_PROFILE}
+[ -z "${AWS_ROUTE53_ACCESSKEY}" ] && AWS_ROUTE53_ACCESSKEY=${AWS_ACCESSKEY}
+[ -z "${AWS_ROUTE53_SECRETKEY}" ] && AWS_ROUTE53_SECRETKEY=${AWS_SECRETKEY}
+[ -z "${AWS_ROUTE53_TOKEN}" ] && AWS_ROUTE53_TOKEN=${AWS_TOKEN}
+
 if [ "${SEED_ARCH}" = "amd64" ]; then
     if [ -z "${OVERRIDE_SEED_IMAGE}" ]; then
         SEED_IMAGE=${SEED_IMAGE_AMD64}
@@ -689,10 +698,6 @@ MACHINES_TYPES=$(jq --argjson VOLUME_SIZE ${VOLUME_SIZE} --arg VOLUME_TYPE ${VOL
 
 export SSH_KEY_FNAME="$(basename ${SSH_PRIVATE_KEY})"
 export SSH_PUBLIC_KEY="${SSH_PRIVATE_KEY}.pub"
-
-export TARGET_CONFIG_LOCATION=${CONFIGURATION_LOCATION}/config/${NODEGROUP_NAME}/config
-export TARGET_DEPLOY_LOCATION=${CONFIGURATION_LOCATION}/config/${NODEGROUP_NAME}/deployment
-export TARGET_CLUSTER_LOCATION=${CONFIGURATION_LOCATION}/cluster/${NODEGROUP_NAME}
 
 # Check if we can resume the creation process
 if [ "${DELETE_CLUSTER}" = "YES" ]; then
@@ -945,15 +950,16 @@ else
     echo_title "Resume custom ${MASTERKUBE} instance with ${TARGET_IMAGE}" > /dev/stderr
 fi
 
+mkdir -p ${TARGET_CONFIG_LOCATION}
+mkdir -p ${TARGET_DEPLOY_LOCATION}
+mkdir -p ${TARGET_CLUSTER_LOCATION}
+
 export TARGET_IMAGE_AMI=$(aws ec2 describe-images --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters "Name=name,Values=${TARGET_IMAGE}" | jq -r '.Images[0].ImageId // ""')
 
 if [ -z "${TARGET_IMAGE_AMI}" ]; then
     echo_red "AMI ${TARGET_IMAGE} not found"
     exit -1
 fi
-
-mkdir -p ${TARGET_CONFIG_LOCATION}
-mkdir -p ${TARGET_CLUSTER_LOCATION}
 
 if [ "${RESUME}" = "NO" ]; then
     if [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
