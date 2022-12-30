@@ -1633,7 +1633,6 @@ function start_kubernes_on_instances() {
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo join-cluster.sh \
                         --join-master=${MASTER_IP} \
-                        --container-runtime=${CONTAINER_ENGINE} \
                         --cloud-provider=${CLOUD_PROVIDER} \
                         --use-external-etcd=${EXTERNAL_ETCD} \
                         --node-group=${NODEGROUP_NAME} \
