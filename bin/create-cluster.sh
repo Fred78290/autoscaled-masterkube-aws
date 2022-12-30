@@ -33,7 +33,7 @@ export CLUSTER_DNS="10.96.0.10"
 export CERT_EXTRA_SANS=()
 export MAX_PODS=110
 export PRIVATE_DOMAIN_NAME=
-export ROUTE53_ZONEID=
+export AWS_ROUTE53_ZONE_ID=
 export LOAD_BALANCER_IP=($IPADDR)
 export EXTERNAL_ETCD=false
 export NODEINDEX=0
@@ -147,7 +147,7 @@ while true; do
         ;;
 
     --private-zone-id)
-        ROUTE53_ZONEID="$2"
+        AWS_ROUTE53_ZONE_ID="$2"
         shift 2
         ;;
 

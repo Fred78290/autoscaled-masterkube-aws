@@ -82,7 +82,7 @@ export VPC_PUBLIC_SUBNET_ID= #"<to be filled>"
 export VPC_PUBLIC_SECURITY_GROUPID= #"<to be filled>"
 export VPC_PRIVATE_SUBNET_ID= #"<to be filled>"
 export VPC_PRIVATE_SECURITY_GROUPID= #"<to be filled>"
-export ROUTE53_ZONEID= #"<to be filled>"
+export AWS_ROUTE53_ZONE_ID= #"<to be filled>"
 
 # optional defined in private aws.defs for debug aws-autoscaler locally
 export AWS_ACCESSKEY= #"<to be filled>"
@@ -891,8 +891,8 @@ fi
 
 # Grab private domain name
 if [ -z "${PRIVATE_DOMAIN_NAME}" ]; then
-    if [ ! -z ${ROUTE53_ZONEID} ]; then
-        PRIVATE_DOMAIN_NAME=$(aws route53 get-hosted-zone --id  ${ROUTE53_ZONEID} --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} | jq -r '.HostedZone.Name // ""')
+    if [ ! -z ${AWS_ROUTE53_ZONE_ID} ]; then
+        PRIVATE_DOMAIN_NAME=$(aws route53 get-hosted-zone --id  ${AWS_ROUTE53_ZONE_ID} --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} | jq -r '.HostedZone.Name // ""')
         PRIVATE_DOMAIN_NAME=${PRIVATE_DOMAIN_NAME::-1}
     else
         PRIVATE_DOMAIN_NAME=${DOMAIN_NAME}
@@ -1325,7 +1325,7 @@ EOF
         fi
 
         # Record Masterkube in Route53 DNS
-        if [ ! -z ${ROUTE53_ZONEID} ]; then
+        if [ ! -z ${AWS_ROUTE53_ZONE_ID} ]; then
             cat > ${TARGET_CONFIG_LOCATION}/dns-${SUFFIX}.json <<EOF
 {
     "Comment": "${MASTERKUBE_NODE} private DNS entry",
@@ -1346,7 +1346,7 @@ EOF
     ]
 }
 EOF
-            aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${ROUTE53_ZONEID} \
+            aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_ZONE_ID} \
                 --change-batch file://${TARGET_CONFIG_LOCATION}/dns-${SUFFIX}.json > /dev/null
 
         elif [ ${INDEX} -ge ${CONTROLNODE_INDEX} ] && [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
@@ -1410,8 +1410,8 @@ function get_ssh_ip() {
 function register_nlb_dns() {
     local NLB_DNS=$1
 
-    if [ ! -z ${ROUTE53_ZONEID} ]; then
-        echo_title "Register dns ${MASTERKUBE}"
+    if [ ! -z ${AWS_ROUTE53_ZONE_ID} ]; then
+        echo_title "Register dns ${MASTERKUBE} in route53: ${AWS_ROUTE53_ZONE_ID}"
 
         cat > ${TARGET_CONFIG_LOCATION}/dns-nlb.json <<EOF
 {
@@ -1434,7 +1434,7 @@ function register_nlb_dns() {
 }
 EOF
 
-        aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${ROUTE53_ZONEID} \
+        aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_ZONE_ID} \
             --change-batch file://${TARGET_CONFIG_LOCATION}/dns-nlb.json > /dev/null
 
         if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
@@ -1652,7 +1652,7 @@ function start_kubernes_on_instances() {
                         --max-pods=${MAX_PODS} \
                         --ecr-password=${ECR_PASSWORD} \
                         --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
-                        --private-zone-id="${ROUTE53_ZONEID}" \
+                        --private-zone-id="${AWS_ROUTE53_ZONE_ID}" \
                         --private-zone-name="${PRIVATE_DOMAIN_NAME}" \
                         --use-external-etcd=${EXTERNAL_ETCD} \
                         --node-group=${NODEGROUP_NAME} \
@@ -1717,7 +1717,7 @@ function start_kubernes_on_instances() {
                         --max-pods=${MAX_PODS} \
                         --ecr-password=${ECR_PASSWORD} \
                         --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
-                        --private-zone-id="${ROUTE53_ZONEID}" \
+                        --private-zone-id="${AWS_ROUTE53_ZONE_ID}" \
                         --private-zone-name="${PRIVATE_DOMAIN_NAME}" \
                         --cert-extra-sans="${CERT_EXTRA_SANS}" \
                         --container-runtime=${CONTAINER_ENGINE} \
@@ -1974,10 +1974,10 @@ if [ "${USE_NLB}" != "YES" ]; then
     fi
 
     # Register in Route53 IP addresses point in private IP
-    if [ ! -z ${ROUTE53_ZONEID} ]; then
+    if [ ! -z ${AWS_ROUTE53_ZONE_ID} ]; then
         echo ${PRIVATE_ROUTE53_REGISTER} | jq . > ${TARGET_CONFIG_LOCATION}/dns-nlb.json
         aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
-            --hosted-zone-id ${ROUTE53_ZONEID} \
+            --hosted-zone-id ${AWS_ROUTE53_ZONE_ID} \
             --change-batch file://${TARGET_CONFIG_LOCATION}/dns-nlb.json > /dev/null
     fi
 
@@ -2165,7 +2165,7 @@ AUTOSCALER_CONFIG=$(cat <<EOF
                 }
             ],
             "network": {
-                "route53": "${ROUTE53_ZONEID}",
+                "route53": "${AWS_ROUTE53_ZONE_ID}",
                 "privateZoneName": "${PRIVATE_DOMAIN_NAME}",
                 "accessKey": "${AWS_ROUTE53_ACCESSKEY}",
                 "secretKey": "${AWS_ROUTE53_SECRETKEY}",
