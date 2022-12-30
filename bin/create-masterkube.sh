@@ -1489,7 +1489,7 @@ function register_public_dns() {
     fi
 
     if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
-        echo_title "Register public dns ${MASTERKUBE}"
+        echo_title "Register public dns ${MASTERKUBE} in route53: ${AWS_ROUTE53_PUBLIC_ZONE_ID}"
 
         cat > ${TARGET_CONFIG_LOCATION}/dns-public.json <<EOF
         {
