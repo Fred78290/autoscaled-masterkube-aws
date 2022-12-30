@@ -10,6 +10,7 @@ set -e
 CURDIR=$(dirname $0)
 
 pushd ${CURDIR}/../
+pushd ${CURDIR}/../ &> /dev/null
 
 export PATH=${PWD}/bin:${PATH}
 export CACHE=$HOME/.local/aws/cache
@@ -2259,4 +2260,4 @@ if [ ! -z ${GODADDY_API_KEY} ]; then
         -d "[{\"data\": \"${MASTERKUBE}.${PUBLIC_DOMAIN_NAME}\"}]"
 fi
 
-popd
+popd &> /dev/null
