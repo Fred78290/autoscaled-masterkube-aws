@@ -758,6 +758,7 @@ fi
 
 # Tag VPC & Subnet
 IFS=, read -a VPC_PUBLIC_SUBNET_IDS <<< "${VPC_PUBLIC_SUBNET_ID}"
+
 for SUBNET in ${VPC_PUBLIC_SUBNET_IDS[*]}
 do
     TAGGED=$(aws ec2 describe-subnets --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters "Name=subnet-id,Values=${SUBNET}" | jq -r ".Subnets[].Tags[]|select(.Key == \"kubernetes.io/cluster/${NODEGROUP_NAME}\")|.Value")
