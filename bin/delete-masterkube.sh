@@ -52,6 +52,7 @@ function echo_line() {
 	echo_grey "============================================================================================================================="
 }
 
+pushd ${CURDIR}/../ &> /dev/null
 
 AWSDEFS=${PWD}/bin/aws.defs
 CONFIGURATION_LOCATION=${PWD}
@@ -141,7 +142,6 @@ function delete_instance_id() {
     echo_blue_bold "Terminated instance: ${INSTANCE_ID}"
 }
 
-pushd ${CURDIR}/../
 
 if [ -f ${TARGET_CONFIG_LOCATION}/buildenv ]; then
     source ${TARGET_CONFIG_LOCATION}/buildenv
@@ -253,4 +253,4 @@ rm -rf ${TARGET_CLUSTER_LOCATION}
 rm -rf ${TARGET_CONFIG_LOCATION}
 rm -rf ${TARGET_DEPLOY_LOCATION}
 
-popd
+popd &> /dev/null
