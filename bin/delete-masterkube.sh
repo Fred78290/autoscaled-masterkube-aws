@@ -236,6 +236,22 @@ do
     fi
 done
 
+if [ ! -z "${GODADDY_API_KEY}" ] && [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
+    echo_blue_bold "Delete DNS ${MASTERKUBE} in godaddy"
+
+    if [ "${USE_NLB}" = "YES" ]; then
+        curl -s -X DELETE -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${MASTERKUBE}"
+    else
+        curl -s -X DELETE -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/A/${MASTERKUBE}"
+    fi
+
+    echo_blue_bold "Delete DNS ${DASHBOARD_HOSTNAME} in godaddy"
+    curl -s -X DELETE -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${DASHBOARD_HOSTNAME}"
+
+    echo_blue_bold "Delete DNS helloworld-aws in godaddy"
+    curl -s -X DELETE -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/helloworld-aws"
+fi
+
 ./bin/kubeconfig-delete.sh $MASTERKUBE $NODEGROUP_NAME &> /dev/null
 
 if [ -f ${TARGET_CONFIG_LOCATION}/aws-autoscaler.pid ]; then
