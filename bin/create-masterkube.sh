@@ -238,10 +238,11 @@ Options are:
 --worker-nodes=<value>                           # Specify the number of worker nodes created in HA cluster, default ${WORKERNODES}
 --container-runtime=<docker|containerd|cri-o>    # Specify which OCI runtime to use, default ${CONTAINER_ENGINE}
                                                  # use aws for internal AWS cloud provider, external for external AWS cloud provider, none for any provider
---internet-facing                                # Specify than the cluster is exposed on internet port: 80 443, default ${EXPOSE_PUBLIC_CLUSTER}
---no-internet-facing                             # Specify than the cluster is not exposed on internet, default ${EXPOSE_PUBLIC_CLUSTER}
+--internet-facing                                # Expose the cluster on internet port: 80 443, default ${EXPOSE_PUBLIC_CLUSTER}
+--no-internet-facing                             # Don't expose the cluster on internet, default ${EXPOSE_PUBLIC_CLUSTER}
 --max-pods=<value>                               # Specify the max pods per created VM, default ${MAX_PODS}
---create-nginx-apigateway                        # Specify if we must create NGINX instance to install an apigateway, default ${USE_NGINX_GATEWAY}
+--create-nginx-apigateway                        # Create NGINX instance to install an apigateway, default ${USE_NGINX_GATEWAY}
+--dont-create-nginx-apigateway                   # Don't create NGINX instance to install an apigateway, default ${USE_NGINX_GATEWAY}
 
 ### Design domain
 --cert-email                                     # Specify the mail for lets encrypt, default ${CERT_EMAIL}
@@ -251,10 +252,10 @@ Options are:
 
 ### Flags in single master node only
 
---control-plane-public                           # Specify than control plane are hosted in public subnet, default ${CONTROLPLANE_USE_PUBLICIP}
---no-control-plane-public                        # Specify than control plane are hosted in private subnet, default ${CONTROLPLANE_USE_PUBLICIP}
---worker-node-public                             # Specify than worker nodes are hosted in public subnet, default ${WORKERNODE_USE_PUBLICIP}
---no-worker-node-public                          # Specify than worker nodes are hosted in private subnet, default ${WORKERNODE_USE_PUBLICIP}
+--control-plane-public                           # Control plane are hosted in public subnet with public IP, default ${CONTROLPLANE_USE_PUBLICIP}
+--no-control-plane-public                        # Control plane are hosted in private subnet, default ${CONTROLPLANE_USE_PUBLICIP}
+--worker-node-public                             # Worker nodes are hosted in public subnet with public IP, default ${WORKERNODE_USE_PUBLICIP}
+--no-worker-node-public                          # Worker nodes are hosted in private subnet, default ${WORKERNODE_USE_PUBLICIP}
 
 ### Flags in ha mode only
 
