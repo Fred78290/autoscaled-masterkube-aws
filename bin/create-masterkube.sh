@@ -104,7 +104,7 @@ export AWS_TOKEN= #"<to be filled>"
 export AWS_ROUTE53_TOKEN= #"<to be filled>"
 
 export EXPOSE_PUBLIC_CLUSTER=true
-export CONTROLPLANE_USE_PUBLICIP=true
+export CONTROLPLANE_USE_PUBLICIP=false
 export WORKERNODE_USE_PUBLICIP=false
 
 export LAUNCH_CA=YES
@@ -234,10 +234,9 @@ Options are:
 
 ### Design the kubernetes cluster
 
---ha-cluster | -c                                # Allow to create an HA cluster, default ${HA_CLUSTER}
+--ha-cluster                                     # Allow to create an HA cluster, default ${HA_CLUSTER}
 --worker-nodes=<value>                           # Specify the number of worker nodes created in HA cluster, default ${WORKERNODES}
 --container-runtime=<docker|containerd|cri-o>    # Specify which OCI runtime to use, default ${CONTAINER_ENGINE}
-                                                 # use aws for internal AWS cloud provider, external for external AWS cloud provider, none for any provider
 --internet-facing                                # Expose the cluster on internet port: 80 443, default ${EXPOSE_PUBLIC_CLUSTER}
 --no-internet-facing                             # Don't expose the cluster on internet, default ${EXPOSE_PUBLIC_CLUSTER}
 --max-pods=<value>                               # Specify the max pods per created VM, default ${MAX_PODS}
@@ -245,12 +244,12 @@ Options are:
 --dont-create-nginx-apigateway                   # Don't create NGINX instance to install an apigateway, default ${USE_NGINX_GATEWAY}
 
 ### Design domain
---cert-email                                     # Specify the mail for lets encrypt, default ${CERT_EMAIL}
---public-domain                                  # Specify the public domain to use, default ${PUBLIC_DOMAIN_NAME}
---private-domain                                 # Specify the private domain to use, default ${PRIVATE_DOMAIN_NAME}
---dashboard-hostname                             # Specify the hostname for kubernetes dashboard, default ${DASHBOARD_HOSTNAME}
+--cert-email=<value>                             # Specify the mail for lets encrypt, default ${CERT_EMAIL}
+--public-domain=<value>                          # Specify the public domain to use, default ${PUBLIC_DOMAIN_NAME}
+--private-domain=<value>                         # Specify the private domain to use, default ${PRIVATE_DOMAIN_NAME}
+--dashboard-hostname=<value>                     # Specify the hostname for kubernetes dashboard, default ${DASHBOARD_HOSTNAME}
 
-### Flags in single master node only
+### Flags to expose nodes in public AZ with public IP
 
 --control-plane-public                           # Control plane are hosted in public subnet with public IP, default ${CONTROLPLANE_USE_PUBLICIP}
 --no-control-plane-public                        # Control plane are hosted in private subnet, default ${CONTROLPLANE_USE_PUBLICIP}
@@ -259,40 +258,41 @@ Options are:
 
 ### Flags in ha mode only
 
---create-external-etcd | -e                      # Allow to create an external HA etcd cluster, default ${EXTERNAL_ETCD}
---use-nlb | -u                                   # Allow to use AWS ELB as load balancer else NGINX is used in public vpc
---dont-use-nlb                                   # Disallow to use AWS ELB as load balancer else NGINX is used in public vpc
+--create-external-etcd                           # Create an external HA etcd cluster, default ${EXTERNAL_ETCD}
+--use-nlb                                        # Use AWS NLB as load balancer in public AZ
+--dont-use-nlb                                   # Use NGINX as load balancer in public AZ
 
 ### Flags in both mode
 
 --prefer-ssh-publicip                            # Allow to SSH on publicip when available, default ${PREFER_SSH_PUBLICIP}
 --dont-prefer-ssh-publicip                       # Disallow to SSH on publicip when available, default ${PREFER_SSH_PUBLICIP}
---control-plane-machine                          # Override machine type used for control plane, default ${CONTROL_PLANE_MACHINE}
---worker-node-machine                            # Override machine type used for worker nodes, default ${WORKER_NODE_MACHINE}
---autoscale-machine | -d=<value>                 # Override machine type used for auto scaling, default ${AUTOSCALE_MACHINE}
---ssh-private-key | -s=<value>                   # Override ssh key is used, default ${SSH_PRIVATE_KEY}
---transport | -t=<value>                         # Override the transport to be used between autoscaler and aws-autoscaler, default ${TRANSPORT}
---cloud-provider                                 # Set cloud provider, (aws | external | none) default $CLOUD_PROVIDER
+--control-plane-machine=<value>                  # Override machine type used for control plane, default ${CONTROL_PLANE_MACHINE}
+--worker-node-machine=<value>                    # Override machine type used for worker nodes, default ${WORKER_NODE_MACHINE}
+--autoscale-machine=<value>                      # Override machine type used for auto scaling, default ${AUTOSCALE_MACHINE}
+--nginx-machine=<value>                          # The instance type name to deploy front nginx node, default ${NGINX_MACHINE}
+--ssh-private-key=<path>                         # Override ssh key is used, default ${SSH_PRIVATE_KEY}
+--transport=<value>                              # Override the transport to be used between autoscaler and aws-autoscaler, default ${TRANSPORT}
+--cloud-provider=<value>                         # Set cloud provider, (aws | external | none) default $CLOUD_PROVIDER
 --node-group=<value>                             # Override the node group name, default ${NODEGROUP_NAME}
 --cni-plugin-version=<value>                     # Override CNI plugin version, default: ${CNI_PLUGIN_VERSION}
 --cni-plugin=<value>                             # Override CNI plugin, default: ${CNI_PLUGIN}
 --kubernetes-version | -k=<value>                # Override the kubernetes version, default ${KUBERNETES_VERSION}
---volume-type                                    # Override the root EBS volume type, default ${VOLUME_TYPE}
---volume-size                                    # Override the root EBS volume size in Gb, default ${VOLUME_SIZE}
+--volume-type=<value>                            # Override the root EBS volume type, default ${VOLUME_TYPE}
+--volume-size=<value>                            # Override the root EBS volume size in Gb, default ${VOLUME_SIZE}
 
 ### Flags to configure network in aws
 
---public-subnet-id                               # Specify the public subnet ID for created VM, default ${VPC_PUBLIC_SUBNET_ID}
---public-sg-id                                   # Specify the public security group ID for VM, default ${VPC_PUBLIC_SECURITY_GROUPID}
---private-subnet-id                              # Specify the private subnet ID for created VM, default ${VPC_PRIVATE_SUBNET_ID}
---private-sg-id                                  # Specify the private security group ID for VM, default ${VPC_PRIVATE_SECURITY_GROUPID}
+--public-subnet-id=<subnetid,...>                # Specify the public subnet ID for created VM, default ${VPC_PUBLIC_SUBNET_ID}
+--public-sg-id=<sg-id>                           # Specify the public security group ID for VM, default ${VPC_PUBLIC_SECURITY_GROUPID}
+--private-subnet-id<subnetid,...>                # Specify the private subnet ID for created VM, default ${VPC_PRIVATE_SUBNET_ID}
+--private-sg-id=<sg-id>                          # Specify the private security group ID for VM, default ${VPC_PRIVATE_SECURITY_GROUPID}
 
 ### Flags to set the template vm
 
 --target-image=<value>                           # Override the prefix template VM image used for created VM, default ${ROOT_IMG_NAME}
 --seed-image=<value>                             # Override the seed image name used to create template, default ${SEED_IMAGE}
 --seed-user=<value>                              # Override the seed user in template, default ${SEED_USER}
---arch | -a=<value>                              # Specify the architecture of VM (amd64|arm64), default ${SEED_ARCH}
+--arch=<value>                                   # Specify the architecture of VM (amd64|arm64), default ${SEED_ARCH}
 
 ### Flags for autoscaler
 
@@ -310,7 +310,7 @@ Options are:
 EOF
 }
 
-TEMP=$(getopt -o xvhrceuwa::p:r:k:n:p:s:t: --long cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
+TEMP=$(getopt -o hvxr --long cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -408,16 +408,16 @@ while true; do
         CACHE=$2
         shift 2
         ;;
-    -c|--ha-cluster)
+    --ha-cluster)
         HA_CLUSTER=true
         CONTROLNODES=3
         shift 1
         ;;
-    -e|--create-external-etcd)
+    --create-external-etcd)
         EXTERNAL_ETCD=true
         shift 1
         ;;
-    -u|--use-nlb)
+    --use-nlb)
         USE_NLB=YES
         shift 1
         ;;
@@ -479,11 +479,11 @@ while true; do
         esac
         shift 2;;
 
-    -p|--profile)
+    --profile)
         AWS_PROFILE="$2"
         shift 2
         ;;
-    -r|--region)
+    --region)
         AWS_REGION="$2"
         shift 2
         ;;
@@ -504,7 +504,7 @@ while true; do
         shift 2
         ;;
 
-    -a|--arch)
+    --arch)
         SEED_ARCH=$2
         shift 2
         ;;
@@ -547,7 +547,7 @@ while true; do
         OVERRIDE_WORKER_NODE_MACHINE="$2"
         shift 2
         ;;
-    -d | --autoscale-machine)
+    --autoscale-machine)
         OVERRIDE_AUTOSCALE_MACHINE="$2"
         shift 2
         ;;
@@ -555,7 +555,7 @@ while true; do
         OVERRIDE_NGINX_MACHINE="$2"
         shift 2
         ;;
-    -s | --ssh-private-key)
+    --ssh-private-key)
         SSH_PRIVATE_KEY=$2
         shift 2
         ;;
@@ -567,11 +567,11 @@ while true; do
         CNI_PLUGIN="$2"
         shift 2
         ;;
-    -t | --transport)
+    --transport)
         TRANSPORT="$2"
         shift 2
         ;;
-    -k | --kubernetes-version)
+    --kubernetes-version)
         KUBERNETES_VERSION="$2"
         shift 2
         ;;
