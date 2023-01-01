@@ -2115,7 +2115,7 @@ done
 
 if [ "${USE_NLB}" = "NO" ] || [ "${HA_CLUSTER}" = "false" ]; then
     # Register in godaddy IP addresses point in public IP
-    if [ ! -z ${GODADDY_API_KEY} ]; then
+    if [ ! -z ${GODADDY_API_KEY} ] && [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
         curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/A/${MASTERKUBE}" \
             -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
             -H "Content-Type: application/json" \
