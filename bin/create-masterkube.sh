@@ -812,6 +812,34 @@ if [ -z ${WORKER_INSTANCE_PROFILE_ARN} ]; then
     fi
 fi
 
+# Grab domain name from route53
+if [ ! -z "${AWS_ROUTE53_ZONE_ID}" ]; then
+    ROUTE53_ZONE_NAME=$(aws route53 get-hosted-zone --id  ${AWS_ROUTE53_ZONE_ID} --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} 2>/dev/null| jq -r '.HostedZone.Name // ""')
+
+    if [ -z "${ROUTE53_ZONE_NAME}" ]; then
+        echo_red_bold "The zone: ${AWS_ROUTE53_ZONE_ID} does not exist, exit"
+        exit 1
+    fi
+
+    ROUTE53_ZONE_NAME=${ROUTE53_ZONE_NAME::-1}
+fi
+
+# Grab private domain name
+if [ -z "${PRIVATE_DOMAIN_NAME}" ]; then
+    if [ -z "${ROUTE53_ZONE_NAME}" ] && [ -z "${PUBLIC_DOMAIN_NAME}" ]; then
+        echo_red_bold "PRIVATE_DOMAIN_NAME is not defined, exit"
+        exit 1
+    fi
+
+    if [ ! -z "${ROUTE53_ZONE_NAME}" ]; then
+        echo_blue_bold "PRIVATE_DOMAIN_NAME will be set to ${ROUTE53_ZONE_NAME}"
+        PRIVATE_DOMAIN_NAME=${ROUTE53_ZONE_NAME}
+    else
+        echo_blue_bold "PRIVATE_DOMAIN_NAME will be set to ${PUBLIC_DOMAIN_NAME}"
+        PRIVATE_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME}
+    fi
+fi
+
 # Tag VPC & Subnet
 IFS=, read -a VPC_PUBLIC_SUBNET_IDS <<< "${VPC_PUBLIC_SUBNET_ID}"
 
@@ -905,12 +933,72 @@ echo_blue_bold "Transport set to:${TRANSPORT}, listen endpoint at ${LISTEN}"
 
 # If CERT doesn't exist, create one autosigned
 if [ ! -f ${SSL_LOCATION}/privkey.pem ]; then
-    echo_blue_bold "${SSL_LOCATION}/privkey.pem doesn't exists, generate autosigned certificat"
+    if [ -z "${PUBLIC_DOMAIN_NAME}" ]; then
+        ACM_DOMAIN_NAME=${PRIVATE_DOMAIN_NAME}
+    else
+        ACM_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME}
+    fi
+
+    echo_blue_bold "${SSL_LOCATION}/privkey.pem doesn't exists, generate autosigned certificat for domain: ${ACM_DOMAIN_NAME}"
     mkdir -p ${SSL_LOCATION}/
-    openssl genrsa 2048 >${SSL_LOCATION}/privkey.pem
-    openssl req -new -x509 -nodes -sha1 -days 3650 -key ${SSL_LOCATION}/privkey.pem >${SSL_LOCATION}/cert.pem
-    cat ${SSL_LOCATION}/cert.pem ${SSL_LOCATION}/privkey.pem >${SSL_LOCATION}/fullchain.pem
-    chmod 644 ${SSL_LOCATION}/*
+
+    WILDCARD="*.${ACM_DOMAIN_NAME}"
+
+    pushd ${SSL_LOCATION}
+
+	cat > csr.conf <<EOF
+[ req ]
+default_bits = 2048
+prompt = no
+default_md = sha256
+req_extensions = req_ext
+distinguished_name = dn
+
+[ dn ]
+C = US
+ST = California
+L = San Francisco
+O = GitHub
+OU = Fred78290
+CN = ${WILDCARD}
+
+[ req_ext ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = ${ACM_DOMAIN_NAME}
+EOF
+
+	openssl req -x509 -sha256 -days 3650 -nodes -newkey rsa:2048 \
+        -subj "/CN=${ACM_DOMAIN_NAME}/C=US/ST=California/L=San Francisco/O=GitHub/OU=Fred78290" \
+        -keyout ca.key -out ca.pem
+	openssl genrsa -out privkey.pem 2048
+	openssl req -new -key privkey.pem -out server.csr -config csr.conf
+
+	cat > cert.conf <<EOF
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = ${WILDCARD}
+DNS.2 = ${ACM_DOMAIN_NAME}
+EOF
+
+	openssl x509 -req -in server.csr \
+        -CA ca.pem -CAkey ca.key \
+        -CAcreateserial \
+        -out cert.pem \
+        -days 3650 \
+        -sha256 \
+        -extfile cert.conf
+
+    cat cert.pem ca.pem > chain.pem
+    cat cert.pem ca.pem privkey.pem > fullchain.pem
+    chmod 644 *
+
+    popd
 fi
 
 if [ ! -f ${SSL_LOCATION}/cert.pem ]; then
@@ -931,30 +1019,23 @@ export ACM_DOMAIN_NAME=$(openssl x509 -noout -subject -in ${SSL_LOCATION}/cert.p
 # Drop wildcard
 export DOMAIN_NAME=$(echo -n $ACM_DOMAIN_NAME | sed 's/\*\.//g')
 
+if [ "${DOMAIN_NAME}" != "${PRIVATE_DOMAIN_NAME}" ] && [ "${DOMAIN_NAME}" != "${PUBLIC_DOMAIN_NAME}" ]; then
+    echo_red_bold "The provided domain ${DOMAIN_NAME} from certificat does not target domain ${PRIVATE_DOMAIN_NAME} or ${PUBLIC_DOMAIN_NAME}, exit"
+    exit 1
+fi
+
 # ACM Keep the wildcard
 export ACM_CERTIFICATE_ARN=$(aws acm list-certificates --profile ${AWS_PROFILE} --region ${AWS_REGION} \
     | jq -r --arg DOMAIN_NAME "${ACM_DOMAIN_NAME}" '.CertificateSummaryList[]|select(.DomainName == $DOMAIN_NAME)|.CertificateArn // ""')
 
 if [ "x${ACM_CERTIFICATE_ARN}" = "x" ]; then
-    aws acm import-certificate --profile ${AWS_PROFILE} --region ${AWS_REGION} --tags "Key=Name,Value=${MASTERKUBE}.${DOMAIN_NAME}" \
-        --certificate fileb://${SSL_LOCATION}/cert.pem --certificate-chain fileb://${SSL_LOCATION}/chain.pem --private-key fileb://${SSL_LOCATION}/privkey.pem
-    ACM_CERTIFICATE_ARN=$(aws acm list-certificates --profile ${AWS_PROFILE} --region ${AWS_REGION} \
-        | jq -r --arg DOMAIN_NAME "${ACM_DOMAIN_NAME}" '.CertificateSummaryList[]|select(.DomainName == $DOMAIN_NAME)|.CertificateArn // ""')
+    ACM_CERTIFICATE_ARN=$(aws acm import-certificate --profile ${AWS_PROFILE} --region ${AWS_REGION} --tags "Key=Name,Value=${MASTERKUBE}.${DOMAIN_NAME}" \
+        --certificate fileb://${SSL_LOCATION}/cert.pem --certificate-chain fileb://${SSL_LOCATION}/fullchain.pem --private-key fileb://${SSL_LOCATION}/privkey.pem | jq -r '.CertificateArn // ""')
 fi
 
 if [ -z "${ACM_CERTIFICATE_ARN}" ]; then
     echo_red "ACM_CERTIFICATE_ARN is empty after creation, something goes wrong"
     exit 1
-fi
-
-# Grab private domain name
-if [ -z "${PRIVATE_DOMAIN_NAME}" ]; then
-    if [ ! -z ${AWS_ROUTE53_ZONE_ID} ]; then
-        PRIVATE_DOMAIN_NAME=$(aws route53 get-hosted-zone --id  ${AWS_ROUTE53_ZONE_ID} --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} | jq -r '.HostedZone.Name // ""')
-        PRIVATE_DOMAIN_NAME=${PRIVATE_DOMAIN_NAME::-1}
-    else
-        PRIVATE_DOMAIN_NAME=${DOMAIN_NAME}
-    fi
 fi
 
 # If the VM template doesn't exists, build it from scrash
