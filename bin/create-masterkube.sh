@@ -230,8 +230,10 @@ Options are:
 ### Flags to set AWS informations
 
 --profile | -p=<value>                           # Specify AWS profile, default ${AWS_PROFILE}
---route53-profile=<value>                        # Specify AWS profile for route53, default ${AWS_PROFILE_ROUTE53}
 --region | -r=<value>                            # Specify AWS region, default ${AWS_REGION}
+
+--route53-profile=<value>                        # Specify AWS profile for route53 if different, default ${AWS_PROFILE_ROUTE53}
+--route53-zone-id=<value>                        # Specify Route53 for private DNS, default ${AWS_ROUTE53_ZONE_ID}
 
 ### Design the kubernetes cluster
 
@@ -311,7 +313,7 @@ Options are:
 EOF
 }
 
-TEMP=$(getopt -o hvxr --long cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
+TEMP=$(getopt -o hvxr --long route53-profile:,route53-zone-id:,cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -486,6 +488,16 @@ while true; do
         ;;
     --region)
         AWS_REGION="$2"
+        shift 2
+        ;;
+
+    --route53-profile)
+        AWS_PROFILE_ROUTE53=$2
+        shift 2
+        ;;
+
+    --route53-zone-id)
+        AWS_ROUTE53_ZONE_ID=$2
         shift 2
         ;;
 
