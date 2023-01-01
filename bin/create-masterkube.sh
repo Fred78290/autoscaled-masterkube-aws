@@ -1913,7 +1913,11 @@ function create_network_interfaces() {
 function create_2_extras_eni() {
     local MORE_ADDRESSES=()
     local VPC_LENGTH=${#VPC_PRIVATE_SUBNET_IDS[@]}
-    local SUBNET_INDEX=$(( $((CONTROLNODE_INDEX - 1)) % $VPC_LENGTH ))
+    local SUBNET_INDEX=0
+
+    if [ $CONTROLNODE_INDEX -gt 0 ]; then
+        SUBNET_INDEX=$(( $((CONTROLNODE_INDEX - 1)) % $VPC_LENGTH ))
+    fi
 
     for INDEX in $(seq 0 1 2)
     do
