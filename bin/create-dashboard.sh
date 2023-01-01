@@ -32,11 +32,12 @@ deploy namespace
 deploy serviceaccount
 deploy service
 
-kubectl create secret tls $K8NAMESPACE \
-    -n $K8NAMESPACE \
-    --key ${SSL_LOCATION}/privkey.pem \
-    --cert ${SSL_LOCATION}/fullchain.pem \
-    --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
+if [ -z "${PUBLIC_DOMAIN_NAME}" ]; then
+    kubectl create secret tls masterkube-dashboard-tls -n $K8NAMESPACE \
+        --key ${SSL_LOCATION}/privkey.pem \
+        --cert ${SSL_LOCATION}/fullchain.pem \
+        --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
+fi
 
 kubectl create secret generic kubernetes-dashboard-certs \
     --from-file=dashboard.key=${SSL_LOCATION}/privkey.pem \

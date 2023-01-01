@@ -23,7 +23,7 @@
                 "hosts": [
                     "$DASHBOARD_HOSTNAME.$DOMAIN_NAME"
                 ],
-                "secretName": "$K8NAMESPACE"
+                "secretName": "masterkube-dashboard-tls"
             }
         ],
         "rules": [

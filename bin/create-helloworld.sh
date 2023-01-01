@@ -14,7 +14,12 @@ fi
 
 mkdir -p $ETC_DIR
 
-kubectl create secret tls $K8NAMESPACE -n $K8NAMESPACE --key ${SSL_LOCATION}/privkey.pem --cert ${SSL_LOCATION}/fullchain.pem --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
+if [ -z "${PUBLIC_DOMAIN_NAME}" ]; then
+    kubectl create secret tls helloworld-tls -n $K8NAMESPACE \
+        --key ${SSL_LOCATION}/privkey.pem \
+        --cert ${SSL_LOCATION}/fullchain.pem \
+        --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
+fi
 
 function deploy {
     echo "Create $ETC_DIR/$1.json"

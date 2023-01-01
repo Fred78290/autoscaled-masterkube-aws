@@ -2127,7 +2127,10 @@ MASTER_IP=$(cat ${TARGET_CLUSTER_LOCATION}/manager-ip)
 TOKEN=$(cat ${TARGET_CLUSTER_LOCATION}/token)
 CACERT=$(cat ${TARGET_CLUSTER_LOCATION}/ca.cert)
 
-kubectl create secret tls kube-system -n kube-system --key ${SSL_LOCATION}/privkey.pem --cert ${SSL_LOCATION}/fullchain.pem --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
+if [ -z "${PUBLIC_DOMAIN_NAME}" ]; then
+    kubectl create secret tls kube-system -n kube-system --key ${SSL_LOCATION}/privkey.pem --cert ${SSL_LOCATION}/fullchain.pem --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
+fi
+
 kubectl create secret generic autoscaler-ssh-keys -n kube-system --from-file=id_rsa="${SSH_PRIVATE_KEY}" --from-file=id_rsa.pub="${SSH_PUBLIC_KEY}" --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
 
 kubeconfig-merge.sh ${MASTERKUBE} ${TARGET_CLUSTER_LOCATION}/config
