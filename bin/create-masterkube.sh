@@ -1698,7 +1698,7 @@ function start_kubernes_on_instances() {
                 elif [ ${INDEX} = ${CONTROLNODE_INDEX} ]; then
                     echo_blue_bold "Start kubernetes ${MASTERKUBE_NODE} instance master node number ${NODEINDEX} in cluster mode, kubernetes version=${KUBERNETES_VERSION}"
 
-                    if [ ${DOMAIN_NAME} = ${PRIVATE_DOMAIN_NAME} ]; then
+                    if [ ${DOMAIN_NAME} != ${PRIVATE_DOMAIN_NAME} ]; then
                         CERT_EXTRA_SANS="${MASTERKUBE}.${DOMAIN_NAME},${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}"
                     else
                         CERT_EXTRA_SANS="${MASTERKUBE}.${DOMAIN_NAME}"
