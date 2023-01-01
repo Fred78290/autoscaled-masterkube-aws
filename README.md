@@ -1,31 +1,31 @@
 # Introduction
 
-This directory contains everthing to create an single plane or HA autoscaling kubernetes cluster on AWS cloud profiver. The build process use **kubeadm**.
+This project contains everthing to create an single plane or HA autoscaling kubernetes cluster on AWS cloud. The build process use **kubeadm**.
 
-The cluster will use my autoscaling tools from projects [kubernetes-aws-autoscaler](https://github.com/Fred78290/kubernetes-aws-autoscaler) and [custom autoscaler](https://github.com/Fred78290/autoscaler)
+It's an EKS or Kops alternative.
 
-If you allow the cluster to be visible on internet, the process will use GODADDY to register public FCQN if you provide GODADDY key. Route53 public zone and private zone could be also used or both depending the name of your public domain name or private domaine name
+The cluster support also autoscaling by using [kubernetes-aws-autoscaler](https://github.com/Fred78290/kubernetes-aws-autoscaler) and [grpc autoscaler](https://github.com/Fred78290/autoscaler)
 
-## Prerequistes
+If you allow the cluster to be visible on internet, the process will use GODADDY or Route53 to register public FCQN.
 
-Ensure that you have sudo right
+Route53 public zone and private zone could be also used or both depending the name of your public domain name or private domaine name
 
-You must also install
+The process install also following kubernetes components
 
-|Linux|MacOS|
-| --- | --- |
-|kubectl|kubectl|
-|aws cli|aws cli|
-|jq|jq|
-||gnu-getopt|
-||gsed|
-||gbase64|
+- cert manager
+- external dns
+- aws efs csi driver
+- aws ebs csi driver
+- kubernetes dashboard and metrics scraper
+- nginx ingress controller
 
 # Example of kubernetes cluster created with this tool
 
-## Single AZ mono Cluster exposed on internet
+## Mono AZ single plane exposed on internet
+
 <p align="center">
 <img src="./images/cluster-mono-az-0.svg" width="512" alt="cert-manager-webhook-godaddy project logo" />
+<br>
 <img src="./images/cluster-mono-az-1.svg" width="512" alt="cert-manager-webhook-godaddy project logo" />
 </p>
 
@@ -43,17 +43,45 @@ You must also install
 
 ## Create the masterkube
 
+### Prerequistes
+
+Ensure that you have sudo right
+
+You must also install the following tools
+
+|Linux|MacOS|
+| --- | --- |
+|kubectl|kubectl|
+|aws cli|aws cli|
+|jq|jq|
+||gnu-getopt|
+||gsed|
+||gbase64|
+
 First step is to fill a file named **aws.defs** in the bin directory with the values needed
 
 ```
 # AWS account identity
 export AWS_PROFILE=
-export AWS_PROFILE_ROUTE53=
 export AWS_REGION=
+
+# AWS keys if no profile defined
 export AWS_ACCESSKEY=
 export AWS_SECRETKEY=
 export AWS_TOKEN=
 
+# Route53 private ZoneID
+export AWS_ROUTE53_ZONE_ID=
+
+# AWS Route53 account if different
+export AWS_PROFILE_ROUTE53=
+
+# AWS keys if no route53 profile defined
+export AWS_ROUTE53_ACCESSKEY=
+export AWS_ROUTE53_SECRETKEY=
+export AWS_ROUTE53_TOKEN=
+
+# Public and private domain name
 export PRIVATE_DOMAIN_NAME=
 export PUBLIC_DOMAIN_NAME=
 
@@ -61,8 +89,7 @@ export PUBLIC_DOMAIN_NAME=
 export MASTER_INSTANCE_PROFILE_ARN=
 export WORKER_INSTANCE_PROFILE_ARN=
 
-export CLOUD_PROVIDER=external
-export AWS_ROUTE53_ZONE_ID=
+# VPC & Subnet to use
 export VPC_PUBLIC_SUBNET_ID=
 export VPC_PUBLIC_SECURITY_GROUPID=
 export VPC_PRIVATE_SUBNET_ID=
