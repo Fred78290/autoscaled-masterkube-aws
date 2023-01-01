@@ -1292,11 +1292,7 @@ function get_instance_name() {
             MASTERKUBE_NODE="${MASTERKUBE}"
         elif [ ${INDEX} -eq ${CONTROLNODE_INDEX} ]; then
             NODEINDEX=1
-            if [ ${INDEX} -eq 0 ]; then
-                MASTERKUBE_NODE="${MASTERKUBE}"
-            else
-                MASTERKUBE_NODE="${NODEGROUP_NAME}-master-01"
-            fi
+            MASTERKUBE_NODE="${NODEGROUP_NAME}-master-01"
         else
             NODEINDEX=$((INDEX - ${CONTROLNODE_INDEX}))
             MASTERKUBE_NODE="${NODEGROUP_NAME}-worker-$(named_index_suffix $NODEINDEX)"
