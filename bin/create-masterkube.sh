@@ -98,12 +98,13 @@ export AWS_ROUTE53_ZONE_ID= #"<to be filled>"
 # optional defined in private aws.defs for debug aws-autoscaler locally
 export AWS_ACCESSKEY= #"<to be filled>"
 export AWS_SECRETKEY= #"<to be filled>"
+export AWS_TOKEN= #"<to be filled>"
+
 export AWS_ROUTE53_ACCESSKEY= #"<to be filled>"
 export AWS_ROUTE53_SECRETKEY= #"<to be filled>"
-export AWS_TOKEN= #"<to be filled>"
 export AWS_ROUTE53_TOKEN= #"<to be filled>"
 
-export EXPOSE_PUBLIC_CLUSTER=true
+export EXPOSE_PUBLIC_CLUSTER=false
 export CONTROLPLANE_USE_PUBLICIP=false
 export WORKERNODE_USE_PUBLICIP=false
 
