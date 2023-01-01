@@ -656,6 +656,18 @@ case "--${CLOUD_PROVIDER}" in
         ;;
 esac
 
+if [ ${HA_CLUSTER} = "false" ]; then
+    if [ "${USE_NLB}" = "YES" ]; then
+        echo_red_bold "NLB usage is not available for single plane cluster"
+        exit 1
+    fi
+
+    if [ "${USE_NGINX_GATEWAY}" = "NO" ] && [ "${CONTROLPLANE_USE_PUBLICIP}" = "false" ] && [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ]; then
+        echo_red_bold "Single plane cluster can not be exposed to internet because because control plane require public IP or require NGINX gateway in front"
+        exit
+    fi
+fi
+
 if [ "${CONTROLPLANE_USE_PUBLICIP}" = "true" ]; then
     PREFER_SSH_PUBLICIP=NO
 
