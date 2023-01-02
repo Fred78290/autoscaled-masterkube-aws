@@ -42,15 +42,20 @@ else
     helm repo add godaddy-webhook https://fred78290.github.io/cert-manager-webhook-godaddy/
     helm repo update
 
-    helm upgrade -i $K8NAMESPACE jetstack/cert-manager --kubeconfig=${TARGET_CLUSTER_LOCATION}/config --namespace $K8NAMESPACE --version ${CERT_MANAGER_VERSION} --set installCRDs=true
+    helm upgrade -i $K8NAMESPACE jetstack/cert-manager \
+            --kubeconfig=${TARGET_CLUSTER_LOCATION}/config \
+            --namespace $K8NAMESPACE \
+            --version ${CERT_MANAGER_VERSION} \
+            --set installCRDs=true
 
-    if [ ! -z "{AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
+    if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
+        echo "Register route53 resolver"
         kubectl create secret generic route53-credentials-secret --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -n $K8NAMESPACE --from-literal=secret=${AWS_ROUTE53_SECRETKEY}
 
         deploy cluster-issuer-route53
-    fi
+    elif [ ! -z ${GODADDY_API_KEY} ]; then
 
-    if [ ! -z ${GODADDY_API_KEY} ]; then
+        echo "Register godaddy resolver"
         helm upgrade -i godaddy-webhook godaddy-webhook/godaddy-webhook \
             --version ${GODADDY_WEBHOOK_VERSION} \
             --set groupName=${PUBLIC_DOMAIN_NAME} \

@@ -15,8 +15,8 @@
             "solvers": [
                 {
                     "selector": {
-                        "dnsNames": [
-                            "*.${PUBLIC_DOMAIN_NAME}"
+                        "dnsZones": [
+                            "${PUBLIC_DOMAIN_NAME}"
                         ]
                     },
                     "dns01": {
