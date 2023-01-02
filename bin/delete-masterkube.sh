@@ -236,7 +236,7 @@ do
     fi
 done
 
-if [ ! -z "${GODADDY_API_KEY}" ] && [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
+if [ ! -z "${GODADDY_API_KEY}" ] && [ ! -z "${PUBLIC_DOMAIN_NAME}" ] && [ -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
     echo_blue_bold "Delete DNS ${MASTERKUBE} in godaddy"
 
     if [ "${USE_NLB}" = "YES" ]; then
