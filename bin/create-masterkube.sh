@@ -1329,6 +1329,7 @@ function create_vm() {
     local SUFFIX=
     local INSTANCE_ID=
     local NODEINDEX=
+    local ROUTE53_ENTRY=
 
     read NODEINDEX SUFFIX MASTERKUBE_NODE <<< "$(get_instance_name ${INDEX})"
 
@@ -1485,9 +1486,7 @@ EOF
             echo $ENI | jq . > ${TARGET_CONFIG_LOCATION}/eni-${SUFFIX}.json
         fi
 
-        # Record Masterkube in Route53 DNS
-        if [ ! -z ${AWS_ROUTE53_ZONE_ID} ]; then
-            cat > ${TARGET_CONFIG_LOCATION}/dns-${SUFFIX}.json <<EOF
+        ROUTE53_ENTRY=$(cat <<EOF
 {
     "Comment": "${MASTERKUBE_NODE} private DNS entry",
     "Changes": [
@@ -1507,16 +1506,36 @@ EOF
     ]
 }
 EOF
+)
+        # Record kubernetes node in Route53 DNS
+        if [ ! -z "${AWS_ROUTE53_ZONE_ID}" ]; then
+
+            echo ${ROUTE53_ENTRY} | jq . >  ${TARGET_CONFIG_LOCATION}/dns-private-${SUFFIX}.json
+
             aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_ZONE_ID} \
-                --change-batch file://${TARGET_CONFIG_LOCATION}/dns-${SUFFIX}.json > /dev/null
+                --change-batch file://${TARGET_CONFIG_LOCATION}/dns-private-${SUFFIX}.json > /dev/null
 
         elif [ ${INDEX} -ge ${CONTROLNODE_INDEX} ] && [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
-            if [ ! -z ${GODADDY_API_KEY} ]; then
-                # Register kubernetes nodes in godaddy if we don't use route53 and private domain
+
+            # Register node in public zone DNS if we don't use private DNS
+
+            if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
+
+                # Register kubernetes nodes in route53
+                echo ${ROUTE53_ENTRY} | jq --arg HOSTNAME "${MASTERKUBE_NODE}.${PUBLIC_DOMAIN_NAME}" '.Changes[0].ResourceRecordSet.Name = $HOSTNAME' > ${TARGET_CONFIG_LOCATION}/dns-public-${SUFFIX}.json
+                aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
+                    --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
+                    --change-batch file://${TARGET_CONFIG_LOCATION}/dns-public-${SUFFIX}.json > /dev/null
+
+            elif [ ! -z ${GODADDY_API_KEY} ]; then
+
+                # Register kubernetes nodes in godaddy if we don't use route53
                 curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/A/${MASTERKUBE_NODE}" \
                     -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
                     -H "Content-Type: application/json" -d "[{\"data\": \"${IPADDR}\"}]"
+
             fi
+
         fi
 
         echo -n ${LAUNCHED_INSTANCE} | jq . > ${TARGET_CONFIG_LOCATION}/instance-${SUFFIX}.json
@@ -1633,13 +1652,6 @@ EOF
 function register_public_dns() {
     local NLB_DNS=$1
 
-    if [ ! -z "${GODADDY_API_KEY}" ]; then
-        curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${MASTERKUBE}" \
-            -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
-            -H "Content-Type: application/json" \
-            -d "[{\"data\": \"${PUBLIC_NLB_DNS}\"}]"
-    fi
-
     if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
         echo_title "Register public dns ${MASTERKUBE} in route53: ${AWS_ROUTE53_PUBLIC_ZONE_ID}"
 
@@ -1666,6 +1678,41 @@ EOF
 
         aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
             --change-batch file://${TARGET_CONFIG_LOCATION}/dns-public.json 2> /dev/null
+
+        cat > ${TARGET_CONFIG_LOCATION}/dns-dashboard.json <<EOF
+        {
+            "Comment": "${DASHBOARD_HOSTNAME} public DNS entry",
+            "Changes": [
+                {
+                    "Action": "UPSERT",
+                    "ResourceRecordSet": {
+                        "Name": "${DASHBOARD_HOSTNAME}.${PUBLIC_DOMAIN_NAME}",
+                        "Type": "CNAME",
+                        "TTL": 60,
+                        "ResourceRecords": [
+                            {
+                                "Value": "${NLB_DNS}"
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+EOF
+
+        aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
+            --change-batch file://${TARGET_CONFIG_LOCATION}/dns-dashboard.json 2> /dev/null
+
+    elif [ ! -z "${GODADDY_API_KEY}" ]; then
+        curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${MASTERKUBE}" \
+            -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d "[{\"data\": \"${PUBLIC_NLB_DNS}\"}]"
+
+        curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${DASHBOARD_HOSTNAME}" \
+            -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d "[{\"data\": \"${PUBLIC_NLB_DNS}\"}]"
     fi
 }
 
@@ -2129,33 +2176,53 @@ do
 done
 
 if [ "${USE_NLB}" = "NO" ] || [ "${HA_CLUSTER}" = "false" ]; then
-    # Register in godaddy IP addresses point in public IP
-    if [ ! -z ${GODADDY_API_KEY} ] && [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
-        curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/A/${MASTERKUBE}" \
-            -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
-            -H "Content-Type: application/json" \
-            -d "${GODADDY_REGISTER}"
-    fi
-
     # Register in Route53 IP addresses point in private IP
     if [ ! -z ${AWS_ROUTE53_ZONE_ID} ]; then
         echo ${PRIVATE_ROUTE53_REGISTER} | jq . > ${TARGET_CONFIG_LOCATION}/dns-nlb.json
         aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
             --hosted-zone-id ${AWS_ROUTE53_ZONE_ID} \
             --change-batch file://${TARGET_CONFIG_LOCATION}/dns-nlb.json > /dev/null
+
     fi
 
-    # Register in Route53 IP addresses point in public IP
-    if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
-        echo ${PRIVATE_ROUTE53_REGISTER} | jq --arg HOSTNAME "${MASTERKUBE}.${PUBLIC_DOMAIN_NAME}" '.Changes[0].ResourceRecordSet.Name = $HOSTNAME' > ${TARGET_CONFIG_LOCATION}/dns-public.json
-        aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
-            --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
-            --change-batch file://${TARGET_CONFIG_LOCATION}/dns-public.json > /dev/null
+    if [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
+        if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
+        
+            # Register in Route53 IP addresses point in public IP
+            echo ${PRIVATE_ROUTE53_REGISTER} | jq --arg HOSTNAME "${MASTERKUBE}.${PUBLIC_DOMAIN_NAME}" '.Changes[0].ResourceRecordSet.Name = $HOSTNAME' > ${TARGET_CONFIG_LOCATION}/dns-public.json
+            aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
+                --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
+                --change-batch file://${TARGET_CONFIG_LOCATION}/dns-public.json > /dev/null
 
-        echo ${PRIVATE_ROUTE53_REGISTER} | jq --arg HOSTNAME "${DASHBOARD_HOSTNAME}.${PUBLIC_DOMAIN_NAME}" '.Changes[0].ResourceRecordSet.Name = $HOSTNAME' > ${TARGET_CONFIG_LOCATION}/dns-dashboard.json
-        aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
-            --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
-            --change-batch file://${TARGET_CONFIG_LOCATION}/dns-dashboard.json > /dev/null
+            echo ${PRIVATE_ROUTE53_REGISTER} | jq --arg HOSTNAME "${DASHBOARD_HOSTNAME}.${PUBLIC_DOMAIN_NAME}" '.Changes[0].ResourceRecordSet.Name = $HOSTNAME' > ${TARGET_CONFIG_LOCATION}/dns-dashboard.json
+            aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
+                --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
+                --change-batch file://${TARGET_CONFIG_LOCATION}/dns-dashboard.json > /dev/null
+        
+            echo ${PRIVATE_ROUTE53_REGISTER} | jq --arg HOSTNAME "helloworld-aws.${PUBLIC_DOMAIN_NAME}" '.Changes[0].ResourceRecordSet.Name = $HOSTNAME' > ${TARGET_CONFIG_LOCATION}/dns-dashboard.json
+            aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
+                --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
+                --change-batch file://${TARGET_CONFIG_LOCATION}/dns-helloworld.json > /dev/null
+
+        elif [ ! -z ${GODADDY_API_KEY} ]; then
+
+            # Register in godaddy IP addresses point in public IP
+            curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/A/${MASTERKUBE}" \
+                -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
+                -H "Content-Type: application/json" \
+                -d "${GODADDY_REGISTER}"
+
+            curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${DASHBOARD_HOSTNAME}" \
+                -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
+                -H "Content-Type: application/json" \
+                -d "[{\"data\": \"${MASTERKUBE}.${PUBLIC_DOMAIN_NAME}\"}]"
+
+            curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/helloworld-aws" \
+                -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
+                -H "Content-Type: application/json" \
+                -d "[{\"data\": \"${MASTERKUBE}.${PUBLIC_DOMAIN_NAME}\"}]"
+
+        fi
     fi
 fi
 
@@ -2412,18 +2479,6 @@ if [ "${EXTERNAL_ETCD}" = "true" ]; then
 else
     kubectl create secret generic etcd-ssl --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -n kube-system \
         --from-file ${TARGET_CLUSTER_LOCATION}/kubernetes/pki/etcd
-fi
-
-if [ ! -z ${GODADDY_API_KEY} ]; then
-    curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${DASHBOARD_HOSTNAME}" \
-        -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
-        -H "Content-Type: application/json" \
-        -d "[{\"data\": \"${MASTERKUBE}.${PUBLIC_DOMAIN_NAME}\"}]"
-
-    curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/helloworld-aws" \
-        -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
-        -H "Content-Type: application/json" \
-        -d "[{\"data\": \"${MASTERKUBE}.${PUBLIC_DOMAIN_NAME}\"}]"
 fi
 
 popd &> /dev/null
