@@ -247,10 +247,13 @@ Options are:
 --dont-create-nginx-apigateway                   # Don't create NGINX instance to install an apigateway, default ${USE_NGINX_GATEWAY}
 
 ### Design domain
+
 --cert-email=<value>                             # Specify the mail for lets encrypt, default ${CERT_EMAIL}
 --public-domain=<value>                          # Specify the public domain to use, default ${PUBLIC_DOMAIN_NAME}
 --private-domain=<value>                         # Specify the private domain to use, default ${PRIVATE_DOMAIN_NAME}
 --dashboard-hostname=<value>                     # Specify the hostname for kubernetes dashboard, default ${DASHBOARD_HOSTNAME}
+--godaddy-key                                    # Specify godaddy api key
+--godaddy-secret                                 # Specify godaddy api secret
 
 ### Flags to expose nodes in public AZ with public IP
 
@@ -313,7 +316,7 @@ Options are:
 EOF
 }
 
-TEMP=$(getopt -o hvxr --long route53-profile:,route53-zone-id:,cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
+TEMP=$(getopt -o hvxr --long godaddy-key:,godaddy-secret:,route53-profile:,route53-zone-id:,cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -395,6 +398,14 @@ while true; do
         ;;
     --private-domain)
         PRIVATE_DOMAIN_NAME=$2
+        shift 2
+        ;;
+    --godaddy-key)
+        GODADDY_API_KEY=$2
+        shift 2
+        ;;
+    --godaddy-secret)
+        GODADDY_API_SECRET=$2
         shift 2
         ;;
     --aws-defs)
