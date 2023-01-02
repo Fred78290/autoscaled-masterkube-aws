@@ -1111,6 +1111,10 @@ if [ "${RESUME}" = "NO" ]; then
             echo_red_bold "No Route53 for PUBLIC_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME}"
         else
             echo_blue_bold "Found PUBLIC_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME} AWS_ROUTE53_PUBLIC_ZONE_ID=$AWS_ROUTE53_PUBLIC_ZONE_ID"
+            echo_blue_bold "Public domain hosts will be registered with route53 not with godaddy"
+            # Disable GoDaddy registration
+            GODADDY_API_KEY=
+            GODADDY_API_SECRET=
         fi
     fi
 
