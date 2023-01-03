@@ -1425,7 +1425,7 @@ EOF
             if [ ${INDEX} -lt ${CONTROLNODE_INDEX} ]; then
                 if [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ]; then
                     PUBLICIP=true
-                    IAM_PROFILE_OPTIONS=true
+                    IAM_PROFILE_OPTIONS=
                 fi
             elif [ ${INDEX} = ${CONTROLNODE_INDEX} ]; then
                 if [ "${CONTROLPLANE_USE_PUBLICIP}" = "true" ]; then
