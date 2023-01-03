@@ -1,9 +1,22 @@
 #!/bin/bash
 function deploy {
     echo "Create $ETC_DIR/$1.json"
-    echo $(eval "cat <<EOF
-    $(<$KUBERNETES_TEMPLATE/$1.json)
-EOF") | jq . > $ETC_DIR/$1.json
+
+    CONFIG=$(eval "cat <<EOF
+$(<$KUBERNETES_TEMPLATE/$1.json)
+EOF")
+
+    if [ "${USE_ZEROSSL}" = "YES" ]; then
+        echo $CONFIG | jq \
+            --arg SERVER "https://acme.zerossl.com/v2/DV90" \
+            --arg ZEROSSL_EAB_KID $ZEROSSL_EAB_KID \
+            '.spec.acme.server = $SERVER | .spec.acme.externalAccountBinding = {"keyID": $ZEROSSL_EAB_KID, "keyAlgorithm": "HS256", "keySecretRef": { "name": "zero-sll-eabsecret", "key": "secret"}}' > $ETC_DIR/$1.json
+    else
+        echo $CONFIG | jq \
+            --arg SERVER "https://acme-v02.api.letsencrypt.org/directory" \
+            --arg CERT_EMAIL ${CERT_EMAIL} \
+            '.spec.acme.server = $SERVER | .spec.acme.email = $CERT_EMAIL' > $ETC_DIR/$1.json
+    fi
 
     kubectl apply -f $ETC_DIR/$1.json --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
 }
@@ -47,6 +60,10 @@ else
             --namespace $K8NAMESPACE \
             --version ${CERT_MANAGER_VERSION} \
             --set installCRDs=true
+
+    if [ "${USE_ZEROSSL}" = "YES" ]; then
+        kubectl -n $K8NAMESPACE create secret generic zero-sll-eabsecret — from-literal secret="${ZEROSSL_EAB_HMAC_SECRET}"
+    fi
 
     if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
         echo "Register route53 resolver"

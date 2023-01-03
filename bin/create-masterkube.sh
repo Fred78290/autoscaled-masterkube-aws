@@ -37,6 +37,7 @@ export CNI_PLUGIN_VERSION=v1.1.1
 export CNI_PLUGIN=aws
 export CLOUD_PROVIDER=aws
 export USE_NLB=NO
+export USE_ZEROSSL=NO
 export HA_CLUSTER=false
 export FIRSTNODE_INDEX=0
 export CONTROLNODES=1
@@ -248,12 +249,18 @@ Options are:
 
 ### Design domain
 
---cert-email=<value>                             # Specify the mail for lets encrypt, default ${CERT_EMAIL}
 --public-domain=<value>                          # Specify the public domain to use, default ${PUBLIC_DOMAIN_NAME}
 --private-domain=<value>                         # Specify the private domain to use, default ${PRIVATE_DOMAIN_NAME}
 --dashboard-hostname=<value>                     # Specify the hostname for kubernetes dashboard, default ${DASHBOARD_HOSTNAME}
 --godaddy-key                                    # Specify godaddy api key
 --godaddy-secret                                 # Specify godaddy api secret
+
+# Cert Manager
+
+--cert-email=<value>                             # Specify the mail for lets encrypt, default ${CERT_EMAIL}
+--use-zerossl                                    # Specify cert-manager to use zerossl instead letsencrypt, default ${USE_ZEROSSL}
+--zerossl-eab-kid=<value>                        # Specify zerossl eab kid, default ${ZEROSSL_EAB_KID}
+--zerossl-eab-hmac-secret=<value>                # Specify zerossl eab hmac secret, default ${ZEROSSL_EAB_HMAC_SECRET}
 
 ### Flags to expose nodes in public AZ with public IP
 
@@ -316,7 +323,7 @@ Options are:
 EOF
 }
 
-TEMP=$(getopt -o hvxr --long godaddy-key:,godaddy-secret:,route53-profile:,route53-zone-id:,cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
+TEMP=$(getopt -o hvxr --long use-zerossl,zerossl-eab-kid:,zerossl-eab-hmac-secret:,godaddy-key:,godaddy-secret:,route53-profile:,route53-zone-id:,cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -386,6 +393,18 @@ while true; do
         ;;
     --cert-email)
         CERT_EMAIL=$2
+        shift 2
+        ;;
+    --use-zerossl)
+        USE_ZEROSSL=YES
+        shift 1
+        ;;
+    --zerossl-eab-kid)
+        ZEROSSL_EAB_KID=$2
+        shift 2
+        ;;
+    --zerossl-eab-hmac-secret)
+        ZEROSSL_EAB_HMAC_SECRET=$2
         shift 2
         ;;
     --dashboard-hostname)
@@ -666,6 +685,13 @@ case "--${CLOUD_PROVIDER}" in
         echo_red "Unknown cloud-provider: ${CLOUD_PROVIDER}, only supported: aws|kubernetes|none"
         ;;
 esac
+
+if [ "${USE_ZEROSSL}" = "YES" ]; then
+    if [ -z "${ZEROSSL_EAB_KID}" ] || [ -z "${ZEROSSL_EAB_HMAC_SECRET}" ]; then
+        echo_red_bold "ZEROSSL_EAB_KID or ZEROSSL_EAB_HMAC_SECRET is empty, exit"
+        exit 1
+    fi
+fi
 
 if [ ${HA_CLUSTER} = "false" ]; then
     if [ "${USE_NLB}" = "YES" ]; then
@@ -1186,6 +1212,9 @@ export WORKERNODES=${WORKERNODES}
 export MASTER_INSTANCE_PROFILE_ARN=${MASTER_INSTANCE_PROFILE_ARN}
 export WORKER_INSTANCE_PROFILE_ARN=${WORKER_INSTANCE_PROFILE_ARN}
 export AWS_ROUTE53_PUBLIC_ZONE_ID=${AWS_ROUTE53_PUBLIC_ZONE_ID}
+export USE_ZEROSSL=${USE_ZEROSSL}
+export ZEROSSL_EAB_KID=${ZEROSSL_EAB_KID}
+export ZEROSSL_EAB_HMAC_SECRET=${ZEROSSL_EAB_HMAC_SECRET}
 EOF
 else
     source ${TARGET_CONFIG_LOCATION}/buildenv
@@ -1510,7 +1539,7 @@ EOF
         # Record kubernetes node in Route53 DNS
         if [ ! -z "${AWS_ROUTE53_ZONE_ID}" ]; then
 
-            echo ${ROUTE53_ENTRY} | jq . >  ${TARGET_CONFIG_LOCATION}/dns-private-${SUFFIX}.json
+            echo ${ROUTE53_ENTRY} | jq --arg HOSTNAME "${MASTERKUBE_NODE}.${PRIVATE_DOMAIN_NAME}" '.Changes[0].ResourceRecordSet.Name = $HOSTNAME' >  ${TARGET_CONFIG_LOCATION}/dns-private-${SUFFIX}.json
 
             aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_ZONE_ID} \
                 --change-batch file://${TARGET_CONFIG_LOCATION}/dns-private-${SUFFIX}.json > /dev/null
@@ -2194,16 +2223,6 @@ if [ "${USE_NLB}" = "NO" ] || [ "${HA_CLUSTER}" = "false" ]; then
                 --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
                 --change-batch file://${TARGET_CONFIG_LOCATION}/dns-public.json > /dev/null
 
-            echo ${PRIVATE_ROUTE53_REGISTER} | jq --arg HOSTNAME "${DASHBOARD_HOSTNAME}.${PUBLIC_DOMAIN_NAME}" '.Changes[0].ResourceRecordSet.Name = $HOSTNAME' > ${TARGET_CONFIG_LOCATION}/dns-dashboard.json
-            aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
-                --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
-                --change-batch file://${TARGET_CONFIG_LOCATION}/dns-dashboard.json > /dev/null
-        
-            echo ${PRIVATE_ROUTE53_REGISTER} | jq --arg HOSTNAME "helloworld-aws.${PUBLIC_DOMAIN_NAME}" '.Changes[0].ResourceRecordSet.Name = $HOSTNAME' > ${TARGET_CONFIG_LOCATION}/dns-dashboard.json
-            aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
-                --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
-                --change-batch file://${TARGET_CONFIG_LOCATION}/dns-helloworld.json > /dev/null
-
         elif [ ! -z ${GODADDY_API_KEY} ]; then
 
             # Register in godaddy IP addresses point in public IP
@@ -2211,16 +2230,6 @@ if [ "${USE_NLB}" = "NO" ] || [ "${HA_CLUSTER}" = "false" ]; then
                 -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
                 -H "Content-Type: application/json" \
                 -d "${GODADDY_REGISTER}"
-
-            curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${DASHBOARD_HOSTNAME}" \
-                -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
-                -H "Content-Type: application/json" \
-                -d "[{\"data\": \"${MASTERKUBE}.${PUBLIC_DOMAIN_NAME}\"}]"
-
-            curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/helloworld-aws" \
-                -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
-                -H "Content-Type: application/json" \
-                -d "[{\"data\": \"${MASTERKUBE}.${PUBLIC_DOMAIN_NAME}\"}]"
 
         fi
     fi

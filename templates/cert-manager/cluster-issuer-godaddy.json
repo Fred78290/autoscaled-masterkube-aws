@@ -7,10 +7,8 @@
     },
     "spec": {
         "acme": {
-            "server": "https://acme-v02.api.letsencrypt.org/directory",
-            "email": "$CERT_EMAIL",
             "privateKeySecretRef": {
-                "name": "letsencrypt-prod-account-key"
+                "name": "certmanager-prod-account-key"
             },
             "solvers": [
                 {
