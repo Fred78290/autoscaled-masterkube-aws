@@ -1857,7 +1857,6 @@ function start_kubernes_on_instances() {
                         --master-nodes="${MASTER_NODES}" \
                         --control-plane-endpoint=${CONTROL_PLANE_ENDPOINT} \
                         --listen-ip="0.0.0.0" ${SILENT}
-                    NLB_DNS=${IPADDR}
 
                     echo_blue_bold "Done configuring load balancer ${MASTERKUBE_NODE} instance in cluster mode"
                 # Start join worker node
@@ -1936,7 +1935,6 @@ function start_kubernes_on_instances() {
                         --master-nodes="${MASTER_NODES}" \
                         --control-plane-endpoint=${CONTROL_PLANE_ENDPOINT} \
                         --listen-ip="0.0.0.0" ${SILENT}
-                    NLB_DNS=${IPADDR}
 
                     echo_blue_bold "Done configuring load balancer ${MASTERKUBE_NODE} instance"
                 # Single instance master node
