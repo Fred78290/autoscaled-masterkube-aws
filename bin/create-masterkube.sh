@@ -1617,7 +1617,8 @@ function get_ssh_ip() {
 #===========================================================================================================================================
 
 function register_nlb_dns() {
-    local NLB_DNS=$1
+    local PRIVATE_NLB_DNS=$1
+    local PUBLIC_NLB_DNS=$2
 
     if [ ! -z ${AWS_ROUTE53_ZONE_ID} ]; then
         echo_title "Register dns ${MASTERKUBE} in route53: ${AWS_ROUTE53_ZONE_ID}"
@@ -1634,7 +1635,7 @@ function register_nlb_dns() {
                 "TTL": 60,
                 "ResourceRecords": [
                     {
-                        "Value": "${NLB_DNS}"
+                        "Value": "${PRIVATE_NLB_DNS}"
                     }
                 ]
             }
@@ -1646,45 +1647,13 @@ EOF
         aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_ZONE_ID} \
             --change-batch file://${TARGET_CONFIG_LOCATION}/dns-nlb.json > /dev/null
 
-        if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
-            # Register dashboard in public DNS for CERT with internal NLB
-            cat > ${TARGET_CONFIG_LOCATION}/dns-dashboard.json <<EOF
-            {
-                "Comment": "${DASHBOARD_HOSTNAME} private DNS entry",
-                "Changes": [
-                    {
-                        "Action": "UPSERT",
-                        "ResourceRecordSet": {
-                            "Name": "${DASHBOARD_HOSTNAME}.${PUBLIC_DOMAIN_NAME}",
-                            "Type": "CNAME",
-                            "TTL": 60,
-                            "ResourceRecords": [
-                                {
-                                    "Value": "${NLB_DNS}"
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }
-EOF
-
-            aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
-                --change-batch file://${TARGET_CONFIG_LOCATION}/dns-dashboard.json > /dev/null
-        fi
     fi
-}
 
-#===========================================================================================================================================
-#
-#===========================================================================================================================================
-function register_public_dns() {
-    local NLB_DNS=$1
+    if [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
+        if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
+            echo_title "Register public dns ${MASTERKUBE} in route53: ${AWS_ROUTE53_PUBLIC_ZONE_ID}"
 
-    if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
-        echo_title "Register public dns ${MASTERKUBE} in route53: ${AWS_ROUTE53_PUBLIC_ZONE_ID}"
-
-        cat > ${TARGET_CONFIG_LOCATION}/dns-public.json <<EOF
+            cat > ${TARGET_CONFIG_LOCATION}/dns-public.json <<EOF
         {
             "Comment": "${MASTERKUBE} public DNS entry",
             "Changes": [
@@ -1696,7 +1665,7 @@ function register_public_dns() {
                         "TTL": 60,
                         "ResourceRecords": [
                             {
-                                "Value": "${NLB_DNS}"
+                                "Value": "${PUBLIC_NLB_DNS}"
                             }
                         ]
                     }
@@ -1705,43 +1674,15 @@ function register_public_dns() {
         }
 EOF
 
-        aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
-            --change-batch file://${TARGET_CONFIG_LOCATION}/dns-public.json 2> /dev/null
+            aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
+                --change-batch file://${TARGET_CONFIG_LOCATION}/dns-public.json 2> /dev/null
 
-        cat > ${TARGET_CONFIG_LOCATION}/dns-dashboard.json <<EOF
-        {
-            "Comment": "${DASHBOARD_HOSTNAME} public DNS entry",
-            "Changes": [
-                {
-                    "Action": "UPSERT",
-                    "ResourceRecordSet": {
-                        "Name": "${DASHBOARD_HOSTNAME}.${PUBLIC_DOMAIN_NAME}",
-                        "Type": "CNAME",
-                        "TTL": 60,
-                        "ResourceRecords": [
-                            {
-                                "Value": "${NLB_DNS}"
-                            }
-                        ]
-                    }
-                }
-            ]
-        }
-EOF
-
-        aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
-            --change-batch file://${TARGET_CONFIG_LOCATION}/dns-dashboard.json 2> /dev/null
-
-    elif [ ! -z "${GODADDY_API_KEY}" ]; then
-        curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${MASTERKUBE}" \
-            -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
-            -H "Content-Type: application/json" \
-            -d "[{\"data\": \"${PUBLIC_NLB_DNS}\"}]"
-
-        curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${DASHBOARD_HOSTNAME}" \
-            -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
-            -H "Content-Type: application/json" \
-            -d "[{\"data\": \"${PUBLIC_NLB_DNS}\"}]"
+        elif [ ! -z "${GODADDY_API_KEY}" ]; then
+            curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${MASTERKUBE}" \
+                -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
+                -H "Content-Type: application/json" \
+                -d "[{\"data\": \"${PUBLIC_NLB_DNS}\"}]"
+        fi
     fi
 }
 
@@ -1769,25 +1710,22 @@ function create_load_balancer() {
             --public-instances-id="${PUBLIC_INSTANCEID_NLB_TARGET}" \
             ${SILENT}
 
-        NLB_DNS=$(aws elbv2 describe-load-balancers --profile=${AWS_PROFILE} --region=${AWS_REGION} | jq -r --arg NLB_NAME "c-${MASTERKUBE}" '.LoadBalancers[]|select(.LoadBalancerName == $NLB_NAME)|.DNSName')
-
-        # Record Masterkube in Route53 DNS
-        register_nlb_dns "${NLB_DNS}"
+        PRIVATE_NLB_DNS=$(aws elbv2 describe-load-balancers --profile=${AWS_PROFILE} --region=${AWS_REGION} | jq -r --arg NLB_NAME "c-${MASTERKUBE}" '.LoadBalancers[]|select(.LoadBalancerName == $NLB_NAME)|.DNSName')
 
         LOAD_BALANCER_IP="${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}"
 
         if [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ]; then
             PUBLIC_NLB_DNS=$(aws elbv2 describe-load-balancers --profile=${AWS_PROFILE} --region=${AWS_REGION} | jq -r --arg NLB_NAME "p-${MASTERKUBE}" '.LoadBalancers[]|select(.LoadBalancerName == $NLB_NAME)|.DNSName')
         else
-            PUBLIC_NLB_DNS=${NLB_DNS}
+            PUBLIC_NLB_DNS=${PRIVATE_NLB_DNS}
         fi
 
-        if [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
-            register_public_dns ${PUBLIC_NLB_DNS}
-        fi
+        # Record Masterkube in Route53 DNS
+        register_nlb_dns ${PRIVATE_NLB_DNS} ${PUBLIC_NLB_DNS}
     fi
 
-    echo "export NLB_DNS=${NLB_DNS}" >> ${TARGET_CONFIG_LOCATION}/buildenv
+    echo "export PRIVATE_NLB_DNS=${PRIVATE_NLB_DNS}" >> ${TARGET_CONFIG_LOCATION}/buildenv
+    echo "export PUBLIC_NLB_DNS=${PUBLIC_NLB_DNS}" >> ${TARGET_CONFIG_LOCATION}/buildenv
 
     if [ "${EXTERNAL_ETCD}" = "true" ]; then
         echo_title "Created etcd cluster: ${MASTER_NODES}"
