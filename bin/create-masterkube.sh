@@ -173,8 +173,6 @@ Options are:
 --public-domain=<value>                          # Specify the public domain to use, default ${PUBLIC_DOMAIN_NAME}
 --private-domain=<value>                         # Specify the private domain to use, default ${PRIVATE_DOMAIN_NAME}
 --dashboard-hostname=<value>                     # Specify the hostname for kubernetes dashboard, default ${DASHBOARD_HOSTNAME}
---godaddy-key                                    # Specify godaddy api key
---godaddy-secret                                 # Specify godaddy api secret
 
 # Cert Manager
 
@@ -182,6 +180,8 @@ Options are:
 --use-zerossl                                    # Specify cert-manager to use zerossl instead letsencrypt, default ${USE_ZEROSSL}
 --zerossl-eab-kid=<value>                        # Specify zerossl eab kid, default ${ZEROSSL_EAB_KID}
 --zerossl-eab-hmac-secret=<value>                # Specify zerossl eab hmac secret, default ${ZEROSSL_EAB_HMAC_SECRET}
+--godaddy-key                                    # Specify godaddy api key
+--godaddy-secret                                 # Specify godaddy api secret
 
 ### Flags to expose nodes in public AZ with public IP
 
