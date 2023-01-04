@@ -897,66 +897,7 @@ if [ ! -f ${SSL_LOCATION}/privkey.pem ]; then
         ACM_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME}
     fi
 
-    echo_blue_bold "${SSL_LOCATION}/privkey.pem doesn't exists, generate autosigned certificat for domain: ${ACM_DOMAIN_NAME}"
-    mkdir -p ${SSL_LOCATION}/
-
-    WILDCARD="*.${ACM_DOMAIN_NAME}"
-
-    pushd ${SSL_LOCATION}
-
-	cat > csr.conf <<EOF
-[ req ]
-default_bits = 2048
-prompt = no
-default_md = sha256
-req_extensions = req_ext
-distinguished_name = dn
-
-[ dn ]
-C = US
-ST = California
-L = San Francisco
-O = GitHub
-OU = Fred78290
-CN = ${WILDCARD}
-
-[ req_ext ]
-subjectAltName = @alt_names
-
-[ alt_names ]
-DNS.1 = ${ACM_DOMAIN_NAME}
-EOF
-
-	openssl req -x509 -sha256 -days 3650 -nodes -newkey rsa:2048 \
-        -subj "/CN=${ACM_DOMAIN_NAME}/C=US/ST=California/L=San Francisco/O=GitHub/OU=Fred78290" \
-        -keyout ca.key -out ca.pem
-	openssl genrsa -out privkey.pem 2048
-	openssl req -new -key privkey.pem -out server.csr -config csr.conf
-
-	cat > cert.conf <<EOF
-authorityKeyIdentifier=keyid,issuer
-basicConstraints=CA:FALSE
-keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
-subjectAltName = @alt_names
-
-[alt_names]
-DNS.1 = ${WILDCARD}
-DNS.2 = ${ACM_DOMAIN_NAME}
-EOF
-
-	openssl x509 -req -in server.csr \
-        -CA ca.pem -CAkey ca.key \
-        -CAcreateserial \
-        -out cert.pem \
-        -days 3650 \
-        -sha256 \
-        -extfile cert.conf
-
-    cat cert.pem ca.pem > chain.pem
-    cat cert.pem ca.pem privkey.pem > fullchain.pem
-    chmod 644 *
-
-    popd
+    ${CURDIR}/create-cert.sh --domain ${ACM_DOMAIN_NAME} --ssl-location ${SSL_LOCATION} --cert-email ${CERT_EMAIL}
 fi
 
 if [ ! -f ${SSL_LOCATION}/cert.pem ]; then
@@ -987,8 +928,8 @@ export ACM_CERTIFICATE_ARN=$(aws acm list-certificates --profile ${AWS_PROFILE} 
     | jq -r --arg DOMAIN_NAME "${ACM_DOMAIN_NAME}" '.CertificateSummaryList[]|select(.DomainName == $DOMAIN_NAME)|.CertificateArn // ""')
 
 if [ "x${ACM_CERTIFICATE_ARN}" = "x" ]; then
-    ACM_CERTIFICATE_ARN=$(aws acm import-certificate --profile ${AWS_PROFILE} --region ${AWS_REGION} --tags "Key=Name,Value=${MASTERKUBE}.${DOMAIN_NAME}" \
-        --certificate fileb://${SSL_LOCATION}/cert.pem --certificate-chain fileb://${SSL_LOCATION}/fullchain.pem --private-key fileb://${SSL_LOCATION}/privkey.pem | jq -r '.CertificateArn // ""')
+    ACM_CERTIFICATE_ARN=$(aws acm import-certificate --profile ${AWS_PROFILE} --region ${AWS_REGION} --tags "Key=Name,Value=${DOMAIN_NAME}" \
+        --certificate fileb://${SSL_LOCATION}/cert.pem --private-key fileb://${SSL_LOCATION}/privkey.pem | jq -r '.CertificateArn // ""')
 fi
 
 if [ -z "${ACM_CERTIFICATE_ARN}" ]; then
