@@ -1,24 +1,14 @@
 #!/bin/bash
 set -e
 
+CURDIR=$(dirname $0)
 NODEGROUP_NAME="aws-ca-k8s"
 MASTERKUBE=${NODEGROUP_NAME}-masterkube
 AWS_NLB_NAME=${MASTERKUBE}
 AWS_PROFILE=
 AWS_REGION=
 
-if [ "$(uname -s)" == "Darwin" ]; then
-    shopt -s expand_aliases
-
-    alias base64=gbase64
-    alias sed=gsed
-    alias getopt=/usr/local/opt/gnu-getopt/bin/getopt
-fi
-
-function echo_red() {
-	# echo message in red
-	echo -e "\x1B[31m$1\x1B[39m"
-}
+source ${CURDIR}/common.sh
 
 TEMP=`getopt -o n:p:r: --long name:,profile:,region: -n "$0" -- "$@"`
 eval set -- "$TEMP"

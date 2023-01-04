@@ -6,51 +6,7 @@ CONTROLNODES=3
 WORKERNODES=3
 FORCE=NO
 
-function echo_blue_dot() {
-	>&2 echo -n -e "\x1B[90m\x1B[39m\x1B[1m\x1B[34m.\x1B[0m\x1B[39m"
-}
-
-function echo_blue_dot_title() {
-	# echo message in blue and bold
-	>&2 echo -n -e "\x1B[90m= \x1B[39m\x1B[1m\x1B[34m$1\x1B[0m\x1B[39m"
-}
-
-function echo_blue_bold() {
-	# echo message in blue and bold
-	>&2 echo -e "\x1B[90m= \x1B[39m\x1B[1m\x1B[34m$1\x1B[0m\x1B[39m"
-}
-
-function echo_title() {
-	# echo message in blue and bold
-    echo_line
-	echo_blue_bold "$1"
-    echo_line
-}
-
-function echo_grey() {
-	# echo message in light grey
-	>&2 echo -e "\x1B[90m$1\x1B[39m"
-}
-
-function echo_red() {
-	# echo message in red
-	>&2 echo -e "\x1B[31m$1\x1B[39m"
-}
-
-function echo_red_bold() {
-	# echo message in blue and bold
-	>&2 echo -e "\x1B[90m= \x1B[31m\x1B[1m\x1B[31m$1\x1B[0m\x1B[39m"
-}
-
-function echo_separator() {
-    echo_line
-	>&2 echo
-	>&2 echo
-}
-
-function echo_line() {
-	echo_grey "============================================================================================================================="
-}
+source ${CURDIR}/common.sh
 
 pushd ${CURDIR}/../ &> /dev/null
 
@@ -113,10 +69,6 @@ source ${AWSDEFS}
 TARGET_CONFIG_LOCATION=${CONFIGURATION_LOCATION}/config/${NODEGROUP_NAME}/config
 TARGET_DEPLOY_LOCATION=${CONFIGURATION_LOCATION}/config/${NODEGROUP_NAME}/deployment
 TARGET_CLUSTER_LOCATION=${CONFIGURATION_LOCATION}/cluster/${NODEGROUP_NAME}
-
-function wait_jobs_finish() {
-    wait $(jobs -p)
-}
 
 function wait_instance_status() {
     local INSTANCE_ID=$1
