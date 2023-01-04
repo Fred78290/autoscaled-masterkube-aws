@@ -14,7 +14,7 @@ export SUBPATH_POD_NAME='$(POD_NAME)'
 export REWRITE_TARGET='/$1'
 
 if [ -z "$DOMAIN_NAME" ]; then
-    export DOMAIN_NAME=$(openssl x509 -noout -subject -in ${SSL_LOCATION}/cert.pem | awk -F= '{print $NF}' | sed -e 's/^[ \t]*//' | sed 's/\*\.//g')
+    export DOMAIN_NAME=$(openssl x509 -noout -subject -in ${SSL_LOCATION}/cert.pem -nameopt sep_multiline | grep 'CN=' | awk -F= '{print $2}' | sed -e 's/^[ \t]*//')
 fi
 
 mkdir -p $ETC_DIR
