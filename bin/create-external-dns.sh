@@ -8,7 +8,7 @@ export KUBERNETES_TEMPLATE=./templates/external-dns
 
 mkdir -p $ETC_DIR
 
-if [ -z "${GODADDY_API_KEY}" ]; then
+if [ -z "${GODADDY_API_KEY}" ] || [ -z "${PUBLIC_DOMAIN_NAME}" ]; then
 
     cat > ${ETC_DIR}/credentials <<EOF
 [default]
