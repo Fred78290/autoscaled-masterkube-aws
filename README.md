@@ -155,10 +155,17 @@ During the process the script will create many files located in
 | `--create-nginx-apigateway` | Create NGINX instance to install an apigateway. | NO |
 | `--dont-create-nginx-apigateway` | Don't create NGINX instance to install an apigateway. | |
 | **Flag to design the kubernetes cluster** |
-| `--cert-email` | Specify the mail for lets encrypt. ||
 | `--public-domain` | Specify the public domain to use. ||
 | `--private-domain` | Specify the private domain to use. ||
 | `--dashboard-hostname` | Specify the hostname for kubernetes dashboard.|masterkube-aws-dashboard|
+| **Cert Manager** |
+| `--cert-email=<value>` | Specify the mail for lets encrypt.||
+| `--use-zerossl` | Specify cert-manager to use zerossl instead letsencrypt.|NO|
+| `--zerossl-eab-kid=<value>` | Specify zerossl eab kid.||
+| `--zerossl-eab-hmac-secret=<value>` | Specify zerossl eab hmac secret.||
+| `--godaddy-key=<value>` | Specify godaddy api key.||
+| `--godaddy-secret=<value>` | Specify godaddy api secret.||
+
 | **Flags to expose nodes in public AZ with public IP** |
 | `--control-plane-public` | Control plane are hosted in public subnet with public IP. | |
 | `--no-control-plane-public` | Control plane are hosted in private subnet. | default |
