@@ -192,16 +192,16 @@ if [ ! -z "${GODADDY_API_KEY}" ] && [ ! -z "${PUBLIC_DOMAIN_NAME}" ] && [ -z "${
     echo_blue_bold "Delete DNS ${MASTERKUBE} in godaddy"
 
     if [ "${USE_NLB}" = "YES" ]; then
-        curl -s -X DELETE -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${MASTERKUBE}"
+        curl -s -X DELETE -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${MASTERKUBE}" > /dev/null
     else
-        curl -s -X DELETE -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/A/${MASTERKUBE}"
+        curl -s -X DELETE -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/A/${MASTERKUBE}" > /dev/null
     fi
 
     echo_blue_bold "Delete DNS ${DASHBOARD_HOSTNAME} in godaddy"
-    curl -s -X DELETE -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${DASHBOARD_HOSTNAME}"
+    curl -s -X DELETE -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${DASHBOARD_HOSTNAME}" > /dev/null
 
     echo_blue_bold "Delete DNS helloworld-aws in godaddy"
-    curl -s -X DELETE -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/helloworld-aws"
+    curl -s -X DELETE -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/helloworld-aws" > /dev/null
 fi
 
 ./bin/kubeconfig-delete.sh $MASTERKUBE $NODEGROUP_NAME &> /dev/null
