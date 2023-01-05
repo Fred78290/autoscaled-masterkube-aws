@@ -897,6 +897,7 @@ if [ ! -f ${SSL_LOCATION}/privkey.pem ]; then
         ACM_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME}
     fi
 
+    echo_blue_bold "Create autosigned certificat for domain: ${ACM_DOMAIN_NAME}"
     ${CURDIR}/create-cert.sh --domain ${ACM_DOMAIN_NAME} --ssl-location ${SSL_LOCATION} --cert-email ${CERT_EMAIL}
 fi
 
@@ -999,7 +1000,7 @@ if [ "${RESUME}" = "NO" ]; then
             echo_red_bold "No Route53 for PUBLIC_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME}"
         else
             echo_blue_bold "Found PUBLIC_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME} AWS_ROUTE53_PUBLIC_ZONE_ID=$AWS_ROUTE53_PUBLIC_ZONE_ID"
-            echo_blue_bold "Public domain hosts will be registered with route53 not with godaddy"
+            echo_red_bold "Route53 will be used to register public domain hosts"
             # Disable GoDaddy registration
             GODADDY_API_KEY=
             GODADDY_API_SECRET=
