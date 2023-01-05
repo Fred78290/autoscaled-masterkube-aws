@@ -13,10 +13,6 @@ export KUBERNETES_TEMPLATE=./templates/dashboard
 export SUBPATH_POD_NAME='$(POD_NAME)'
 export REWRITE_TARGET='/$1'
 
-if [ -z "$DOMAIN_NAME" ]; then
-    export DOMAIN_NAME=$(openssl x509 -noout -subject -in ${SSL_LOCATION}/cert.pem -nameopt sep_multiline | grep 'CN=' | awk -F= '{print $2}' | sed -e 's/^[ \t]*//')
-fi
-
 mkdir -p $ETC_DIR
 
 function deploy {
@@ -31,13 +27,6 @@ kubectl apply -f $ETC_DIR/$1.json --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
 deploy namespace
 deploy serviceaccount
 deploy service
-
-if [ -z "${PUBLIC_DOMAIN_NAME}" ]; then
-    kubectl create secret tls masterkube-dashboard-tls -n $K8NAMESPACE \
-        --key ${SSL_LOCATION}/privkey.pem \
-        --cert ${SSL_LOCATION}/fullchain.pem \
-        --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
-fi
 
 kubectl create secret generic kubernetes-dashboard-certs \
     --from-file=dashboard.key=${SSL_LOCATION}/privkey.pem \

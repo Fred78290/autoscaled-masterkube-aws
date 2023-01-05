@@ -7,10 +7,6 @@ export K8NAMESPACE=kube-system
 export ETC_DIR=${TARGET_DEPLOY_LOCATION}/metrics-server
 export KUBERNETES_TEMPLATE=./templates/metrics-server
 
-if [ -z "$DOMAIN_NAME" ]; then
-    export DOMAIN_NAME=$(openssl x509 -noout -subject -in ${SSL_LOCATION}/cert.pem -nameopt sep_multiline | grep 'CN=' | awk -F= '{print $2}' | sed -e 's/^[ \t]*//')
-fi
-
 mkdir -p $ETC_DIR
 
 function deploy {
