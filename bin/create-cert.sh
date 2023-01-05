@@ -20,7 +20,7 @@ eval set -- "${TEMP}"
 
 while true; do
     case "$1" in
-    -h|--help:
+    -h|--help)
         usage
         exit
         shift 1
