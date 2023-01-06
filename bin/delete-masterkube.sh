@@ -170,7 +170,16 @@ for FILE in ${TARGET_CONFIG_LOCATION}/dns-*.json
 do
     if [ -f $FILE ]; then
         DNS=$(cat $FILE | jq '.Changes[0].Action = "DELETE"')
+        DNSNAME=$(echo $DNS | jq -r '.Changes[0].ResourceRecordSet.Name')
+
         echo $DNS | jq . > $FILE
+
+        echo_blue_bold "Delete DNS entry: ${DNSNAME}"
+        if [[ "${DNSNAME}" == *.${PUBLIC_DOMAIN_NAME} ]]; then
+            ZONEID=${AWS_ROUTE53_PUBLIC_ZONE_ID}
+        else
+            ZONEID=${AWS_ROUTE53_ZONE_ID}
+        fi
 
         aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
             --hosted-zone-id ${AWS_ROUTE53_ZONE_ID} \
