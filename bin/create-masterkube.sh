@@ -1986,14 +1986,26 @@ do
     LAUNCHED_INSTANCES[${INDEX}]=$(cat ${TARGET_CONFIG_LOCATION}/instance-${SUFFIX}.json)
     IPADDR=$(echo ${LAUNCHED_INSTANCES[${INDEX}]} | jq -r '.PrivateIpAddress // ""')
     PUBLICIPADDR=$(echo ${LAUNCHED_INSTANCES[${INDEX}]} | jq --arg IPADDR ${IPADDR} -r '.PublicIpAddress // $IPADDR')
-
     PRIVATE_ADDR_IPS[$INDEX]=${IPADDR}
     PUBLIC_ADDR_IPS[$INDEX]=${PUBLICIPADDR}
+    REGISTER_IPADDR=NO
 
-    if [ ${INDEX} -eq 0 ] || [ ${INDEX} -lt ${CONTROLNODE_INDEX} ]; then
-        GODADDY_REGISTER=$(echo ${GODADDY_REGISTER} | jq --arg IPADDR "${PUBLICIPADDR}" '. += [ { "data": $IPADDR } ]')
+    if [ ${INDEX} -lt ${WORKERNODE_INDEX} ] && [ ${INDEX} -ge ${CONTROLNODE_INDEX} ] && [ ${EXPOSE_PUBLIC_CLUSTER} = "true" ] && [ "${CONTROLPLANE_USE_PUBLICIP}" = "true" ] && [ "${USE_NLB}" = "NO" ] && [ "${USE_NGINX_GATEWAY}" = "NO" ]; then
+        REGISTER_IPADDR=YES
+    elif [ ${INDEX} -eq 0 ] || [ ${INDEX} -lt ${CONTROLNODE_INDEX} ]; then
+        REGISTER_IPADDR=YES
+    fi
+
+    if [ ${REGISTER_IPADDR} = "YES" ]; then
         PRIVATE_ROUTE53_REGISTER=$(echo ${PRIVATE_ROUTE53_REGISTER} | jq --arg IPADDR "${IPADDR}" '.Changes[0].ResourceRecordSet.ResourceRecords += [ { "Value": $IPADDR } ]')
-        PUBLIC_ROUTE53_REGISTER=$(echo ${PUBLIC_ROUTE53_REGISTER} | jq --arg IPADDR "${PUBLICIPADDR}" '.Changes[0].ResourceRecordSet.ResourceRecords += [ { "Value": $IPADDR } ]')
+
+        if [ -z "${PUBLICIPADDR}" ]; then
+            GODADDY_REGISTER=$(echo ${GODADDY_REGISTER} | jq --arg IPADDR "${IPADDR}" '. += [ { "data": $IPADDR } ]')
+            PUBLIC_ROUTE53_REGISTER=$(echo ${PUBLIC_ROUTE53_REGISTER} | jq --arg IPADDR "${IPADDR}" '.Changes[0].ResourceRecordSet.ResourceRecords += [ { "Value": $IPADDR } ]')
+        else
+            GODADDY_REGISTER=$(echo ${GODADDY_REGISTER} | jq --arg IPADDR "${PUBLICIPADDR}" '. += [ { "data": $IPADDR } ]')
+            PUBLIC_ROUTE53_REGISTER=$(echo ${PUBLIC_ROUTE53_REGISTER} | jq --arg IPADDR "${PUBLICIPADDR}" '.Changes[0].ResourceRecordSet.ResourceRecords += [ { "Value": $IPADDR } ]')
+        fi
 
         if [ -z ${LOAD_BALANCER_IP} ]; then
             LOAD_BALANCER_IP=${IPADDR}
@@ -2017,7 +2029,7 @@ if [ "${USE_NLB}" = "NO" ] || [ "${HA_CLUSTER}" = "false" ]; then
         if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
         
             # Register in Route53 IP addresses point in public IP
-            echo ${PRIVATE_ROUTE53_REGISTER} | jq --arg HOSTNAME "${MASTERKUBE}.${PUBLIC_DOMAIN_NAME}" '.Changes[0].ResourceRecordSet.Name = $HOSTNAME' > ${TARGET_CONFIG_LOCATION}/dns-public.json
+            echo ${PUBLIC_ROUTE53_REGISTER} | jq --arg HOSTNAME "${MASTERKUBE}.${PUBLIC_DOMAIN_NAME}" '.Changes[0].ResourceRecordSet.Name = $HOSTNAME' > ${TARGET_CONFIG_LOCATION}/dns-public.json
             aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
                 --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
                 --change-batch file://${TARGET_CONFIG_LOCATION}/dns-public.json > /dev/null
