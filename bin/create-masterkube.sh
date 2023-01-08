@@ -919,7 +919,7 @@ fi
 export TARGET_IMAGE_AMI=$(aws ec2 describe-images --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters "Name=name,Values=${TARGET_IMAGE}" | jq -r '.Images[0].ImageId // ""')
 
 # Extract the domain name from CERT
-export ACM_DOMAIN_NAME=$(openssl x509 -noout -subject -in ${SSL_LOCATION}/cert.pem -nameopt sep_multiline | grep 'CN=' | awk -F= '{print $2}' | sed -e 's/^[ \t]*//')
+export ACM_DOMAIN_NAME=$(openssl x509 -noout -subject -in ${SSL_LOCATION}/cert.pem -nameopt sep_multiline | grep 'CN=' | awk -F= '{print $2}' | sed -e 's/^[\s\t]*//')
 
 # Drop wildcard
 export DOMAIN_NAME=$(echo -n $ACM_DOMAIN_NAME | sed 's/\*\.//g')
