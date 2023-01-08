@@ -54,6 +54,7 @@ You must also install the following tools
 |kubectl|kubectl|
 |aws cli|aws cli|
 |jq|jq|
+|cfssl|cfssl|
 ||gnu-getopt|
 ||gsed|
 ||gbase64|
@@ -112,7 +113,7 @@ Some needed file are located in:
 
 The first thing done by this script is to create a VM Template Ubuntu-20.04.3 image with kubernetes preinstalled with a container runtime.
 
-The VM template will be named by convention focal-k8s-cni-(aws|flannel|calico|...)-(kubernetes version))-(amd64|arm64)-(docker|containerd|cri-o))
+The VM template will be named by convention jammy-k8s-cni-(aws|flannel|calico|...)-(kubernetes version))-(amd64|arm64)-(docker|containerd|cri-o))
 
 Next step will be to launch a cloned VM and create a master node. It will also deploy a dashboard at the URL https://masterkube-aws-dashboard.@your-domain@/
 
@@ -160,7 +161,8 @@ During the process the script will create many files located in
 | `--dashboard-hostname` | Specify the hostname for kubernetes dashboard.|masterkube-aws-dashboard|
 | **Cert Manager** |
 | `--cert-email=<value>` | Specify the mail for lets encrypt.||
-| `--use-zerossl` | Specify cert-manager to use zerossl instead letsencrypt.|NO|
+| `--use-zerossl` | Specify cert-manager to use zerossl.|YES|
+| `--dont-use-zerossl` | Specify cert-manager to use letsencrypt.|NO|
 | `--zerossl-eab-kid=<value>` | Specify zerossl eab kid.||
 | `--zerossl-eab-hmac-secret=<value>` | Specify zerossl eab hmac secret.||
 | `--godaddy-key=<value>` | Specify godaddy api key.||
