@@ -1545,7 +1545,7 @@ EOF
 EOF
 
             aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
-                --change-batch file://${TARGET_CONFIG_LOCATION}/dns-public.json 2> /dev/null
+                --change-batch file://${TARGET_CONFIG_LOCATION}/dns-public.json > /dev/null
 
         elif [ ! -z "${GODADDY_API_KEY}" ]; then
             curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${MASTERKUBE}" \
