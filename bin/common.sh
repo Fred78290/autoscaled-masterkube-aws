@@ -1,4 +1,10 @@
 if [ "$(uname -s)" == "Darwin" ]; then
+
+    if [ -z "$(command -v cfssl)" ]; then
+        echo_red_bold "You must install gnu cfssl with brew (brew install cfssl)"
+        exit 1
+    fi
+
     if [ -z "$(command -v gsed)" ]; then
         echo_red_bold "You must install gnu sed with brew (brew install gsed), this script is not compatible with the native macos sed"
         exit 1

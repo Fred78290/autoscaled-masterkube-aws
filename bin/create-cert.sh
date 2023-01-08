@@ -70,76 +70,81 @@ WILDCARD="*.${ACM_DOMAIN_NAME}"
 
 pushd ${SSL_LOCATION}
 
-cat > csr.conf <<EOF
-[ req ]
-default_bits = 2048
-prompt = no
-default_md = sha256
-req_extensions = req_ext
-distinguished_name = dn
-
-[ dn ]
-C = US
-ST = California
-L = San Francisco
-O = GitHub
-OU = Fred78290
-CN = ${WILDCARD}
-emailAddress = ${CERT_EMAIL}
-
-[ req_ext ]
-subjectAltName = @alt_names
-
-[ alt_names ]
-DNS.1 = ${ACM_DOMAIN_NAME}
+cat > ca-config.json <<EOF
+{
+  "signing": {
+    "default": {
+      "expiry": "87600h"
+    },
+    "profiles": {
+      "${ACM_DOMAIN_NAME}": {
+        "usages": [
+            "signing",
+            "key encipherment",
+            "server auth",
+            "client auth"
+        ],
+        "expiry": "87600h"
+      }
+    }
+  }
+}
 EOF
 
-cat > csr.conf <<EOF
-[ req ]
-default_bits = 2048
-prompt = no
-default_md = sha256
-req_extensions = req_ext
-distinguished_name = dn
-
-[ dn ]
-CN = ${WILDCARD}
-
-[ req_ext ]
-subjectAltName = @alt_names
-
-[ alt_names ]
-DNS.1 = ${ACM_DOMAIN_NAME}
+cat > ca-csr.json <<EOF
+{
+  "CN": "${ACM_DOMAIN_NAME}",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+        "C": "US",
+        "ST": "California",
+        "L": "San Francisco",
+        "O": "GitHub",
+        "OU": "Fred78290",
+        "emailAddress": "${CERT_EMAIL}"
+    }
+  ]
+}
 EOF
 
-# Generate a self signed CA
-openssl req -x509 -sha256 -days 3650 -nodes -newkey rsa:2048 \
-    -subj "/C=US/ST=California/L=San Francisco/O=GitHub/OU=Fred78290/CN=${ACM_DOMAIN_NAME}/emailAddress=${CERT_EMAIL}" \
-    -keyout ca.key \
-    -out ca.pem
-
-openssl genrsa -out privkey.pem 2048
-openssl req -new -key privkey.pem -out server.csr -config csr.conf
-
-cat > cert.conf <<EOF
-authorityKeyIdentifier=keyid,issuer
-basicConstraints=CA:FALSE
-keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
-subjectAltName = @alt_names
-
-[alt_names]
-DNS.1 = ${WILDCARD}
-DNS.2 = ${ACM_DOMAIN_NAME}
+cat > csr.json <<EOF
+{
+    "CN": "${ACM_DOMAIN_NAME}",
+    "hosts": [
+        "${WILDCARD}",
+        "${ACM_DOMAIN_NAME}"
+    ],
+    "key": {
+        "algo": "rsa",
+        "size": 2048
+    },
+    "names": [
+        {
+            "C": "US",
+            "ST": "California",
+            "L": "San Francisco",
+            "O": "GitHub",
+            "OU": "Fred78290",
+            "emailAddress": "${CERT_EMAIL}"
+        }
+    ]
+}
 EOF
 
-openssl x509 -req -in server.csr \
-    -CA ca.pem \
-    -CAkey ca.key \
-    -CAcreateserial \
-    -out cert.pem \
-    -days 3650 \
-    -sha256 \
-    -extfile cert.conf
+CACERT=$(cfssl gencert -initca ca-csr.json)
+echo $CACERT | jq -r '.cert' > ca.pem
+echo $CACERT | jq -r '.csr' > ca.csr
+echo $CACERT | jq -r '.key' > ca.key
+
+CERT=$(cfssl gencert -ca=ca.pem -ca-key=ca.key -config=ca-config.json -profile=${ACM_DOMAIN_NAME} csr.json)
+
+echo $CERT | jq -r '.cert' > cert.pem
+echo $CERT | jq -r '.csr' > cert.csr
+echo $CERT | jq -r '.key' > privkey.pem
 
 cat cert.pem ca.pem > chain.pem
 cat cert.pem ca.pem privkey.pem > fullchain.pem
