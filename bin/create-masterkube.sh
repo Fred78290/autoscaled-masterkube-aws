@@ -37,7 +37,7 @@ export CNI_PLUGIN_VERSION=v1.1.1
 export CNI_PLUGIN=aws
 export CLOUD_PROVIDER=aws
 export USE_NLB=NO
-export USE_ZEROSSL=NO
+export USE_ZEROSSL=YES
 export HA_CLUSTER=false
 export FIRSTNODE_INDEX=0
 export CONTROLNODES=1
@@ -177,7 +177,8 @@ Options are:
 # Cert Manager
 
 --cert-email=<value>                             # Specify the mail for lets encrypt, default ${CERT_EMAIL}
---use-zerossl                                    # Specify cert-manager to use zerossl instead letsencrypt, default ${USE_ZEROSSL}
+--use-zerossl                                    # Specify cert-manager to use zerossl, default ${USE_ZEROSSL}
+--dont-use-zerossl                               # Specify cert-manager to use letsencrypt, default ${USE_ZEROSSL}
 --zerossl-eab-kid=<value>                        # Specify zerossl eab kid, default ${ZEROSSL_EAB_KID}
 --zerossl-eab-hmac-secret=<value>                # Specify zerossl eab hmac secret, default ${ZEROSSL_EAB_HMAC_SECRET}
 --godaddy-key                                    # Specify godaddy api key
@@ -318,6 +319,10 @@ while true; do
         ;;
     --use-zerossl)
         USE_ZEROSSL=YES
+        shift 1
+        ;;
+    --dont-use-zerossl)
+        USE_ZEROSSL=NO
         shift 1
         ;;
     --zerossl-eab-kid)
