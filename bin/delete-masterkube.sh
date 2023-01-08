@@ -182,7 +182,7 @@ do
         fi
 
         aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
-            --hosted-zone-id ${AWS_ROUTE53_ZONE_ID} \
+            --hosted-zone-id ${ZONEID} \
             --change-batch file://${FILE} &> /dev/null
     fi
 done
