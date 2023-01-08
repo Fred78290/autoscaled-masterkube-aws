@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+CURDIR=$(dirname $0)
+
 AWS_PROFILE=
 AWS_REGION=
 AWS_VPCID=
@@ -14,18 +16,7 @@ AWS_USE_PUBLICIP=false
 PUBLIC_INSTANCES_ID=
 CONTROLPLANE_INSTANCES_ID=
 
-if [ "$(uname -s)" == "Darwin" ]; then
-    shopt -s expand_aliases
-
-    alias base64=gbase64
-    alias sed=gsed
-    alias getopt=/usr/local/opt/gnu-getopt/bin/getopt
-fi
-
-function echo_red() {
-	# echo message in red
-	echo -e "\x1B[31m$1\x1B[39m"
-}
+source ${CURDIR}/common.sh
 
 TEMP=`getopt -o n:p:r:s:x --long cert-arn:,trace,expose-public:,name:,profile:,region:,target-vpc-id:,private-subnet-id:,public-subnet-id:,target-port:,security-group:,public-instances-id:,controlplane-instances-id: -n "$0" -- "$@"`
 eval set -- "$TEMP"

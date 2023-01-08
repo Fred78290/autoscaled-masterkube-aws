@@ -1,4 +1,8 @@
 #!/bin/bash
+CURDIR=$(dirname $0)
+
+source ${CURDIR}/common.sh
+
 NODEGROUP_NAME="aws-ca-k8s"
 
 TEMP=$(getopt -o c:g: --long node-group:,cluster-nodes: -n "$0" -- "$@")

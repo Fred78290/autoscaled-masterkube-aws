@@ -25,13 +25,7 @@ MASTER_USE_PUBLICIP=true
 
 SSH_OPTIONS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-if [ "$(uname -s)" == "Darwin" ]; then
-    shopt -s expand_aliases
-
-    alias base64=gbase64
-    alias sed=gsed
-    alias getopt=/usr/local/opt/gnu-getopt/bin/getopt
-fi
+source ${CURDIR}/common.sh
 
 if [ "$OSDISTRO" == "Linux" ]; then
     TZ=$(cat /etc/timezone)
