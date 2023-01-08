@@ -93,7 +93,7 @@ done
 mkdir -p $CACHE
 
 if [ -z "$TARGET_IMAGE" ]; then
-    TARGET_IMAGE="focal-k8s-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${CONTAINER_ENGINE}-${SEED_ARCH}"
+    TARGET_IMAGE="jammy-k8s-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${CONTAINER_ENGINE}-${SEED_ARCH}"
 fi
 
 if [ "$SEED_ARCH" == "amd64" ]; then
