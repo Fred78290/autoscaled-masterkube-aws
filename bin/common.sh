@@ -14,11 +14,17 @@ if [ "$(uname -s)" == "Darwin" ]; then
         exit 1
     fi
 
-    shopt -s expand_aliases
+    function base64() {
+        gbase64 $@
+    }
 
-    alias base64=gbase64
-    alias sed=gsed
-    alias getopt=/usr/local/opt/gnu-getopt/bin/getopt
+    function sed() {
+        gsed $@
+    }
+
+    function getopt() {
+        /usr/local/opt/gnu-getopt/bin/getopt $@
+    }
 fi
 
 function verbose() {
