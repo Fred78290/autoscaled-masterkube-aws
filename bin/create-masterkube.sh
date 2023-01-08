@@ -784,7 +784,7 @@ if [ ! -z "${AWS_ROUTE53_ZONE_ID}" ]; then
         exit 1
     fi
 
-    ROUTE53_ZONE_NAME=${ROUTE53_ZONE_NAME::-1}
+    ROUTE53_ZONE_NAME=${ROUTE53_ZONE_NAME%?}
 fi
 
 # Grab private domain name
