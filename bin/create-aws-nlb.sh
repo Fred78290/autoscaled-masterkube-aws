@@ -200,7 +200,7 @@ function create_nlb() {
 }
 
 if [ $AWS_USE_PUBLICIP = "true" ]; then
-    create_nlb "p-${AWS_NLB_NAME}" internet-facing "${AWS_PUBLIC_SUBNETID[*]}" 443 network "${PUBLIC_INSTANCES_IP[*]}"
+    create_nlb "p-${AWS_NLB_NAME}" internet-facing "${AWS_PUBLIC_SUBNETID[*]}" "80 443" network "${PUBLIC_INSTANCES_IP[*]}"
 fi
 
 NLB_ARN=$(create_nlb "c-${AWS_NLB_NAME}" internal "${AWS_PRIVATE_SUBNETID[*]}" "${AWS_TARGET_PORT[*]}" network "${CONTROLPLANE_INSTANCES_IP[*]}")
