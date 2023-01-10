@@ -923,10 +923,16 @@ export ACM_DOMAIN_NAME=$(openssl x509 -noout -subject -in ${SSL_LOCATION}/cert.p
 
 # Drop wildcard
 export DOMAIN_NAME=$(echo -n $ACM_DOMAIN_NAME | sed 's/\*\.//g')
+export CERT_DOMAIN=${DOMAIN_NAME}
 
 if [ "${DOMAIN_NAME}" != "${PRIVATE_DOMAIN_NAME}" ] && [ "${DOMAIN_NAME}" != "${PUBLIC_DOMAIN_NAME}" ]; then
-    echo_red_bold "The provided domain ${DOMAIN_NAME} from certificat does not target domain ${PRIVATE_DOMAIN_NAME} or ${PUBLIC_DOMAIN_NAME}, exit"
-    exit 1
+    echo_red "Warning: The provided domain ${CERT_DOMAIN} from certificat does not target domain ${PRIVATE_DOMAIN_NAME} or ${PUBLIC_DOMAIN_NAME}"
+
+    if [ -z "${PUBLIC_DOMAIN_NAME}" ]; then
+        DOMAIN_NAME=${PRIVATE_DOMAIN_NAME}
+    else
+        DOMAIN_NAME=${PUBLIC_DOMAIN_NAME}
+    fi
 fi
 
 # ACM Keep the wildcard
@@ -934,7 +940,7 @@ export ACM_CERTIFICATE_ARN=$(aws acm list-certificates --profile ${AWS_PROFILE} 
     | jq -r --arg DOMAIN_NAME "${ACM_DOMAIN_NAME}" '.CertificateSummaryList[]|select(.DomainName == $DOMAIN_NAME)|.CertificateArn // ""')
 
 if [ "x${ACM_CERTIFICATE_ARN}" = "x" ]; then
-    ACM_CERTIFICATE_ARN=$(aws acm import-certificate --profile ${AWS_PROFILE} --region ${AWS_REGION} --tags "Key=Name,Value=${DOMAIN_NAME}" \
+    ACM_CERTIFICATE_ARN=$(aws acm import-certificate --profile ${AWS_PROFILE} --region ${AWS_REGION} --tags "Key=Name,Value=${CERT_DOMAIN}" \
         --certificate fileb://${SSL_LOCATION}/cert.pem --private-key fileb://${SSL_LOCATION}/privkey.pem | jq -r '.CertificateArn // ""')
 fi
 
@@ -1048,7 +1054,9 @@ export MEMORYTOTAL="${MEMORYTOTAL}"
 export MINNODES=${MINNODES}
 export NODEGROUP_NAME=${NODEGROUP_NAME}
 export OSDISTRO=${OSDISTRO}
+export PUBLIC_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME}
 export PRIVATE_DOMAIN_NAME=${PRIVATE_DOMAIN_NAME}
+export CERT_DOMAIN=${CERT_DOMAIN}
 export REGISTRY=${REGISTRY}
 export ROOT_IMG_NAME=${ROOT_IMG_NAME}
 export SCALEDOWNDELAYAFTERADD=${SCALEDOWNDELAYAFTERADD}
