@@ -89,37 +89,37 @@ while true ; do
 done
 
 if [ -z "$AWS_NLB_NAME" ]; then
-    echo_red "subnet is not defined"
+    echo_red_bold "subnet is not defined"
     exit -1
 fi
 
 if [ ${#AWS_PUBLIC_SUBNETID[@]} -eq 0 ]; then
-    echo_red "public subnet is not defined"
+    echo_red_bold "public subnet is not defined"
     exit -1
 fi
 
 if [ ${#AWS_PRIVATE_SUBNETID[@]} -eq 0 ]; then
-    echo_red "private subnet is not defined"
+    echo_red_bold "private subnet is not defined"
     exit -1
 fi
 
 if [ -z "$AWS_SECURITY_GROUP" ]; then
-    echo_red "security group is not defined"
+    echo_red_bold "security group is not defined"
     exit -1
 fi
 
 if [ -z "$AWS_CERT_ARN" ]; then
-    echo_red "certificat arn is not defined"
+    echo_red_bold "certificat arn is not defined"
     exit -1
 fi
 
 if [ ${#PUBLIC_INSTANCES_ID[@]} -eq 0 ]; then
-    echo_red "public instances is not defined"
+    echo_red_bold "public instances is not defined"
     exit -1
 fi
 
 if [ ${#CONTROLPLANE_INSTANCES_ID[@]} -eq 0 ]; then
-    echo_red "controlplane instances is not defined"
+    echo_red_bold "controlplane instances is not defined"
     exit -1
 fi
 
@@ -196,11 +196,11 @@ fi
 
 NLB_ARN=$(create_nlb "c-${AWS_NLB_NAME}" internal "${AWS_PRIVATE_SUBNETID[*]}" "${AWS_TARGET_PORT[*]}" network "${CONTROLPLANE_INSTANCES_IP[*]}")
 
-echo -n "Wait NLB to start $NLB_ARN"
+echo_blue_dot_title -n "Wait NLB to start $NLB_ARN"
 
 while [ "$(echo "$NBL_DESCRIBE" | jq -r '.LoadBalancers[0].State.Code // ""')" != "active" ];
 do
-    echo -n .
+    echo_blue_dot
     sleep 5
     NBL_DESCRIBE=$(aws elbv2 describe-load-balancers --profile=${AWS_PROFILE} --region=${AWS_REGION} --load-balancer-arns ${NLB_ARN})
 done

@@ -73,21 +73,50 @@ while true ; do
                     CONTAINER_CTL=crictl
                     ;;
                 *)
-                    echo "Unsupported container runtime: $2"
+                    echo_red_bold "Unsupported container runtime: $2"
                     exit 1
                     ;;
             esac
             shift 2;;
 
         --) shift ; break ;;
-        *) echo "$1 - Internal error!" ; exit 1 ;;
+        *) echo_red_bold "$1 - Internal error!" ; exit 1 ;;
     esac
 done
 
 mkdir -p $CACHE
 
-if [ -z "$TARGET_IMAGE" ]; then
-    TARGET_IMAGE="jammy-k8s-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${CONTAINER_ENGINE}-${SEED_ARCH}"
+if [ -z "${SEED_IMAGE}" ]; then
+    echo_red_bold "Seed image is not defined, exit"
+    exit 1
+fi
+
+SOURCE_IMAGE_ID=$(aws ec2 describe-images --profile ${AWS_PROFILE} --region ${AWS_REGION} --image-ids "${SEED_IMAGE}" 2>/dev/null | jq -r '.Images[0].ImageId//""')
+
+if [ -z "${SOURCE_IMAGE_ID}" ]; then
+    echo_red_bold "Source $SOURCE_IMAGE_ID not found!"
+    exit 1
+fi
+
+if [ -z "${SUBNET_ID}" ]; then
+    echo_red_bold "Subnet to be used is not defined, exit"
+    exit 1
+fi
+
+if [ -z "${SECURITY_GROUPID}" ]; then
+    echo_red_bold "Security group to be used is not defined, exit"
+    exit 1
+fi
+
+if [ -z "${TARGET_IMAGE}" ]; then
+    ROOT_IMG_NAME=$(aws ec2 describe-images --image-ids ${SEED_IMAGE} | jq -r '.Images[0].Name//""' | gsed -E 's/.+ubuntu-(\w+)-.+/\1-k8s/')
+
+    if [ "${ROOT_IMG_NAME}" = "-k8s" ]; then
+        echo_red_bold "AMI: ${SEED_IMAGE} not found or not ubuntu, exit"
+        exit
+    fi
+
+    TARGET_IMAGE="${ROOT_IMG_NAME}-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${CONTAINER_ENGINE}-${SEED_ARCH}"
 fi
 
 if [ "$SEED_ARCH" == "amd64" ]; then
@@ -95,7 +124,7 @@ if [ "$SEED_ARCH" == "amd64" ]; then
 elif [ "$SEED_ARCH" == "arm64" ]; then
     INSTANCE_TYPE=t4g.small
 else
-    echo "Unsupported architecture: $SEED_ARCH"
+    echo_red_bold "Unsupported architecture: $SEED_ARCH"
     exit -1
 fi
 
@@ -105,7 +134,7 @@ KEYEXISTS=$(aws ec2 describe-key-pairs --profile ${AWS_PROFILE} --region ${AWS_R
 
 if [ ! -z "${TARGET_IMAGE_ID}" ]; then
     if [ $FORCE = NO ]; then
-        echo "$TARGET_IMAGE already exists!"
+        echo_blue_bold "$TARGET_IMAGE already exists!"
         exit 0
     fi
     aws ec2 deregister-image --profile ${AWS_PROFILE} --region ${AWS_REGION} --image-id "${TARGET_IMAGE_ID}" &>/dev/null
@@ -117,9 +146,9 @@ if [ -z "${SOURCE_IMAGE_ID}" ]; then
 fi
 
 if [ -z ${KEYEXISTS} ]; then
-    echo "SSH Public key doesn't exist"
+    echo_red_bold "SSH Public key doesn't exist"
     if [ -z ${SSH_KEY_PUB} ]; then
-        echo "${SSH_KEY_PUB} doesn't exists. FATAL"
+        echo_red_bold "${SSH_KEY_PUB} doesn't exists. FATAL"
         exit -1
     fi
     aws ec2 import-key-pair --profile ${AWS_PROFILE} --region ${AWS_REGION} --key-name ${SSH_KEYNAME} --public-key-material "file://${SSH_KEY_PUB}"
@@ -128,7 +157,7 @@ fi
 KUBERNETES_MINOR_RELEASE=$(echo -n $KUBERNETES_VERSION | tr '.' ' ' | awk '{ print $2 }')
 CRIO_VERSION=$(echo -n $KUBERNETES_VERSION | tr -d 'v' | tr '.' ' ' | awk '{ print $1"."$2 }')
 
-echo "Prepare ${TARGET_IMAGE} image with cri-o version: $CRIO_VERSION and kubernetes: $KUBERNETES_VERSION"
+echo_blue_bold "Prepare ${TARGET_IMAGE} image with cri-o version: $CRIO_VERSION and kubernetes: $KUBERNETES_VERSION"
 
 cat > $CACHE/mapping.json <<EOF
 [
@@ -551,7 +580,7 @@ else
     PUBLIC_IP_OPTIONS=--no-associate-public-ip-address
 fi
 
-echo "Launch instance ${SEED_IMAGE} to ${TARGET_IMAGE}"
+echo_blue_bold "Launch instance ${SEED_IMAGE} to ${TARGET_IMAGE}"
 LAUNCHED_INSTANCE=$(aws ec2 run-instances \
     --profile ${AWS_PROFILE} \
     --region ${AWS_REGION} \
@@ -568,15 +597,15 @@ LAUNCHED_INSTANCE=$(aws ec2 run-instances \
 LAUNCHED_ID=$(echo ${LAUNCHED_INSTANCE} | jq -r '.Instances[0].InstanceId//""')
 
 if [ -z ${LAUNCHED_ID} ]; then
-    echo "Something goes wrong when launching ${TARGET_IMAGE}"
+    echo_red_bold "Something goes wrong when launching ${TARGET_IMAGE}"
     exit -1
 fi
 
-echo -n "Wait for ${TARGET_IMAGE} instanceID ${LAUNCHED_ID} to boot"
+echo_blue_dot_title "Wait for ${TARGET_IMAGE} instanceID ${LAUNCHED_ID} to boot"
 
 while [ ! "$(aws ec2  describe-instances --profile ${AWS_PROFILE} --region ${AWS_REGION} --instance-ids ${LAUNCHED_ID} | jq .Reservations[0].Instances[0].State.Code)" -eq 16 ];
 do
-    echo -n "."
+    echo_blue_dot
     sleep 1
 done
 
@@ -592,11 +621,11 @@ else
     IP_TYPE="private"
 fi
 
-echo -n "Wait for ${TARGET_IMAGE} ssh ready for on ${IP_TYPE} IP=${IPADDR}"
+echo_blue_dot_title "Wait for ${TARGET_IMAGE} ssh ready for on ${IP_TYPE} IP=${IPADDR}"
 
 while :
 do
-    echo -n "."
+    echo_blue_dot
     scp ${SSH_OPTIONS} -o ConnectTimeout=1 "${CACHE}/prepare-image.sh" "${SEED_USER}@${IPADDR}":~ 2>/dev/null && break
     sleep 1
 done
@@ -608,27 +637,29 @@ ssh ${SSH_OPTIONS} -t "${SEED_USER}@${IPADDR}" rm ./prepare-image.sh
 
 aws ec2 stop-instances --profile ${AWS_PROFILE} --region ${AWS_REGION} --instance-ids "${LAUNCHED_ID}" &> /dev/null
 
-echo -n "Wait ${TARGET_IMAGE} to shutdown"
+echo_blue_dot_title "Wait ${TARGET_IMAGE} to shutdown"
+
 while [ ! $(aws ec2  describe-instances --profile ${AWS_PROFILE} --region ${AWS_REGION} --instance-ids "${LAUNCHED_ID}" | jq .Reservations[0].Instances[0].State.Code) -eq 80 ];
 do
-    echo -n "."
+    echo_blue_dot
     sleep 1
 done
 echo
 
-echo "Created image ${TARGET_IMAGE} with kubernetes version ${KUBERNETES_VERSION}"
+
+echo_blue_bold "Created image ${TARGET_IMAGE} with kubernetes version ${KUBERNETES_VERSION}"
 
 IMAGEID=$(aws ec2 create-image --profile ${AWS_PROFILE} --region ${AWS_REGION} --instance-id "${LAUNCHED_ID}" --name "${TARGET_IMAGE}" --description "Kubernetes ${KUBERNETES_VERSION} image ready to use, based on AMI ${SEED_IMAGE}" | jq -r '.ImageId//""')
 
 if [ -z $IMAGEID ]; then
-    echo "Something goes wrong when creating image from ${TARGET_IMAGE}"
+    echo_red_bold "Something goes wrong when creating image from ${TARGET_IMAGE}"
     exit -1
 fi
 
-echo -n "Wait AMI ${IMAGEID} to be available"
+echo_blue_dot_title "Wait AMI ${IMAGEID} to be available"
 while [ ! $(aws ec2 describe-images --profile ${AWS_PROFILE} --region ${AWS_REGION} --image-ids "${IMAGEID}" | jq .Images[0].State | tr -d '"') == "available" ];
 do
-    echo -n "."
+    echo_blue_dot
     sleep 5
 done
 echo
