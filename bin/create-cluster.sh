@@ -193,17 +193,15 @@ CNI_PLUGIN=$(echo "$CNI_PLUGIN" | tr '[:upper:]' '[:lower:]')
 
 case $CNI_PLUGIN in
     aws)
-        POD_NETWORK_CIDR="${SUBNET_IPV4_CIDR_BLOCK}"
+        POD_NETWORK_CIDR="${VPC_IPV4_CIDR_BLOCK}"
+        TEN_RANGE=$(echo -n ${VPC_IPV4_CIDR_BLOCK} | grep -c '^10\..*' || true )
 
-        MAC=$(curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/ -s | head -n 1 | sed 's/\/$//')
-        TEN_RANGE=$(curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$MAC/vpc-ipv4-cidr-blocks | grep -c '^10\..*' || true )
-
-        if [[ "$TEN_RANGE" != "0" ]]; then
-          SERVICE_NETWORK_CIDR="172.20.0.0/16"
-          CLUSTER_DNS="172.20.0.10"
-        else
+        if [ $TEN_RANGE -eq 0 ]; then
           CLUSTER_DNS="10.100.0.10"
           SERVICE_NETWORK_CIDR="10.100.0.0/16"
+        else
+          SERVICE_NETWORK_CIDR="172.20.0.0/16"
+          CLUSTER_DNS="172.20.0.10"
         fi
         ;;
     flannel)
