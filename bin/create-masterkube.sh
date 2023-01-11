@@ -1839,8 +1839,8 @@ function create_network_interfaces() {
 
     if [ ${HA_CLUSTER} = "true" ]; then
         if [ ${INDEX} -lt ${CONTROLNODE_INDEX} ]; then
-            # Use subnet public for NGINX Load balancer
-            if [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ]; then
+            # Use subnet public for NGINX Load balancer if we don't use a NLB
+            if [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ] && [ "${USE_NLB}" = "NO" ]; then
                 PUBLICIP=true
                 SUBNET_INDEX=$(( $((NODEINDEX - 1)) % ${#VPC_PUBLIC_SUBNET_IDS[@]} ))
                 SUBNETID="${VPC_PUBLIC_SUBNET_IDS[${SUBNET_INDEX}]}"
