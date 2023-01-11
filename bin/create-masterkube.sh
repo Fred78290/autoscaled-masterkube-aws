@@ -959,7 +959,7 @@ fi
 
 # If the VM template doesn't exists, build it from scrash
 if [ -z "${TARGET_IMAGE_AMI}" ]; then
-    echo_blue_dot_title "Create aws preconfigured image ${TARGET_IMAGE}"
+    echo_blue_bold "Create aws preconfigured image ${TARGET_IMAGE}"
 
     if [ ${CONTROLPLANE_USE_PUBLICIP} == "true" ]; then
         SUBNETID=${VPC_PUBLIC_SUBNET_IDS[0]}
