@@ -410,7 +410,9 @@ if [ "$CNI_PLUGIN" = "aws" ]; then
 
     KUBERNETES_MINOR_RELEASE=$(kubectl version -o json | jq -r .serverVersion.minor)
 
-    if [ $KUBERNETES_MINOR_RELEASE -gt 22 ]; then
+    if [ $KUBERNETES_MINOR_RELEASE -gt 24 ]; then
+      AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.12.1/config/master/aws-k8s-cni.yaml
+    elif [ $KUBERNETES_MINOR_RELEASE -gt 22 ]; then
       AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.11/config/master/aws-k8s-cni.yaml
     elif [ $KUBERNETES_MINOR_RELEASE -gt 20 ]; then
       AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.10/config/master/aws-k8s-cni.yaml
@@ -418,19 +420,6 @@ if [ "$CNI_PLUGIN" = "aws" ]; then
       AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.9.3/config/v1.9/aws-k8s-cni.yaml
     fi
 
-    case "${CONTAINER_ENGINE}" in
-      cri-o)
-        curl -s ${AWS_CNI_URL} | sed 's/1\.11\.4-rc1/1.11.3/g' | yq e -P - \
-            | sed -e 's/mountPath: \/var\/run\/dockershim\.sock/mountPath: \/var\/run\/cri\.sock/g' -e 's/path: \/var\/run\/dockershim\.sock/path: \/var\/run\/cri\.sock/g' > cni-aws.yaml
-        ;;
-      containerd)
-        curl -s ${AWS_CNI_URL} | sed 's/1\.11\.4-rc1/1.11.3/g' | yq e -P - \
-            | sed -e 's/mountPath: \/var\/run\/dockershim\.sock/mountPath: \/var\/run\/cri\.sock/g' -e 's/path: \/var\/run\/dockershim\.sock/path: \/var\/run\/containerd\/containerd\.sock/g' > cni-aws.yaml
-        ;;
-      *)
-        curl -s ${AWS_CNI_URL} | sed 's/1\.11\.4-rc1/1.11.3/g' > cni-aws.yaml
-        ;;
-    esac
 
     if [ $CONTAINER_ENGINE == "cri-o" ]; then
       curl -s ${AWS_CNI_URL} | yq e -P - \
@@ -468,8 +457,7 @@ elif [ "$CNI_PLUGIN" = "canal" ]; then
 
     echo "Install canal network"
 
-    kubectl apply -f "https://raw.githubusercontent.com/projectcalico/canal/master/k8s-install/1.7/rbac.yaml" 2>&1
-    kubectl apply -f "https://raw.githubusercontent.com/projectcalico/canal/master/k8s-install/1.7/canal.yaml" 2>&1
+    kubectl apply -f "https://raw.githubusercontent.com/projectcalico/calico/v3.24.5/manifests/canal.yaml" 2>&1
 
 elif [ "$CNI_PLUGIN" = "kube" ]; then
 

@@ -332,8 +332,7 @@ elif [ "${CONTAINER_ENGINE}" == "containerd" ]; then
     echo "==============================================================================================================================="
     echo "Install Containerd"
     echo "==============================================================================================================================="
-
-    curl -sL  https://github.com/containerd/containerd/releases/download/v1.6.8/cri-containerd-cni-1.6.8-linux-${SEED_ARCH}.tar.gz | tar -C / -xz
+    curl -sL  https://github.com/containerd/containerd/releases/download/v1.6.15/cri-containerd-cni-1.6.15-linux-${SEED_ARCH}.tar.gz | tar -C / -xz
 
     mkdir -p /etc/containerd
     containerd config default | sed 's/SystemdCgroup = false/SystemdCgroup = true/g' | tee /etc/containerd/config.toml
@@ -341,7 +340,8 @@ elif [ "${CONTAINER_ENGINE}" == "containerd" ]; then
     systemctl enable containerd.service
     systemctl restart containerd
 
-    curl -sL  https://github.com/containerd/nerdctl/releases/download/v1.0.0/nerdctl-1.0.0-linux-${SEED_ARCH}.tar.gz | tar -C /usr/local/bin -xz
+    curl -sL  https://github.com/containerd/nerdctl/releases/download/v1.1.0/nerdctl-1.1.0-linux-${SEED_ARCH}.tar.gz | tar -C /usr/local/bin -xz
+
 else
 
     echo "==============================================================================================================================="
@@ -521,7 +521,9 @@ echo "= Pull cni image"
 echo "==============================================================================================================================="
 
 if [ "$CNI_PLUGIN" = "aws" ]; then
-    if [ ${KUBERNETES_MINOR_RELEASE} -gt 22 ]; then
+    if [ ${KUBERNETES_MINOR_RELEASE} -gt 24 ]; then
+      AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.12.1/config/master/aws-k8s-cni.yaml
+    elif [ ${KUBERNETES_MINOR_RELEASE} -gt 22 ]; then
       AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.11/config/master/aws-k8s-cni.yaml
     elif [ ${KUBERNETES_MINOR_RELEASE} -gt 20 ]; then
       AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.10/config/master/aws-k8s-cni.yaml
@@ -530,7 +532,7 @@ if [ "$CNI_PLUGIN" = "aws" ]; then
     fi
     pull_image ${AWS_CNI_URL} AWS ${ECR_PASSWORD}
 elif [ "$CNI_PLUGIN" = "calico" ]; then
-    curl -s -O -L "https://github.com/projectcalico/calicoctl/releases/download/v3.18.2/calicoctl-linux-${SEED_ARCH}"
+    curl -s -O -L "https://github.com/projectcalico/calicoctl/releases/download/v3.24.5/calicoctl-linux-${SEED_ARCH}"
     chmod +x calicoctl-linux-${SEED_ARCH}
     mv calicoctl-linux-${SEED_ARCH} /usr/local/bin/calicoctl
     pull_image https://docs.projectcalico.org/manifests/calico-vxlan.yaml
@@ -539,8 +541,7 @@ elif [ "$CNI_PLUGIN" = "flannel" ]; then
 elif [ "$CNI_PLUGIN" = "weave" ]; then
     pull_image "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')"
 elif [ "$CNI_PLUGIN" = "canal" ]; then
-    pull_image https://raw.githubusercontent.com/projectcalico/canal/master/k8s-install/1.7/rbac.yaml
-    pull_image https://raw.githubusercontent.com/projectcalico/canal/master/k8s-install/1.7/canal.yaml
+    pull_image https://raw.githubusercontent.com/projectcalico/calico/v3.24.5/manifests/canal.yaml
 elif [ "$CNI_PLUGIN" = "kube" ]; then
     pull_image https://raw.githubusercontent.com/cloudnativelabs/kube-router/master/daemonset/kubeadm-kuberouter.yaml
     pull_image https://raw.githubusercontent.com/cloudnativelabs/kube-router/master/daemonset/kubeadm-kuberouter-all-features.yaml
