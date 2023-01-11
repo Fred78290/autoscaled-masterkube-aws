@@ -13,12 +13,12 @@ FORCE=NO
 INSTANCE_IMAGE=t3a.small
 SEED_ARCH=amd64
 SEED_USER=ubuntu
-SEED_IMAGE="<to be filled>"
+SEED_IMAGE=
 TARGET_IMAGE=
 CONTAINER_ENGINE=docker
 CONTAINER_CTL=docker
-SUBNET_ID="<to be filled>"
-SECURITY_GROUPID="<to be filled>"
+SUBNET_ID=
+SECURITY_GROUPID=
 SSH_KEY_PUB=~/.ssh/id_rsa.pub
 SSH_KEY_PRIV=~/.ssh/id_rsa
 MASTER_USE_PUBLICIP=true
@@ -129,7 +129,6 @@ else
 fi
 
 TARGET_IMAGE_ID=$(aws ec2 describe-images --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters "Name=architecture,Values=x86_64" "Name=name,Values=${TARGET_IMAGE}" "Name=virtualization-type,Values=hvm" 2>/dev/null | jq -r '.Images[0].ImageId//""')
-SOURCE_IMAGE_ID=$(aws ec2 describe-images --profile ${AWS_PROFILE} --region ${AWS_REGION} --image-ids "${SEED_IMAGE}" 2>/dev/null | jq -r '.Images[0].ImageId//""')
 KEYEXISTS=$(aws ec2 describe-key-pairs --profile ${AWS_PROFILE} --region ${AWS_REGION} --key-names "${SSH_KEYNAME}" 2>/dev/null | jq  -r '.KeyPairs[].KeyName//""')
 
 if [ ! -z "${TARGET_IMAGE_ID}" ]; then
@@ -138,11 +137,6 @@ if [ ! -z "${TARGET_IMAGE_ID}" ]; then
         exit 0
     fi
     aws ec2 deregister-image --profile ${AWS_PROFILE} --region ${AWS_REGION} --image-id "${TARGET_IMAGE_ID}" &>/dev/null
-fi
-
-if [ -z "${SOURCE_IMAGE_ID}" ]; then
-    echo "Source $SOURCE_IMAGE_ID not found!"
-    exit -1
 fi
 
 if [ -z ${KEYEXISTS} ]; then

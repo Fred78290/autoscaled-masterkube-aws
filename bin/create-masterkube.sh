@@ -32,7 +32,6 @@ export SSH_PRIVATE_KEY=~/.ssh/id_rsa
 export SSH_PUBLIC_KEY="${SSH_PRIVATE_KEY}.pub"
 export KUBERNETES_VERSION=$(curl -sSL https://dl.k8s.io/release/stable.txt)
 export KUBECONFIG=${HOME}/.kube/config
-export ROOT_IMG_NAME=jammy-k8s
 export CNI_PLUGIN_VERSION=v1.1.1
 export CNI_PLUGIN=aws
 export CLOUD_PROVIDER=aws
@@ -67,7 +66,6 @@ export VOLUME_SIZE=10
 export MAX_PODS=110
 export MASTER_PROFILE_NAME="kubernetes-master-profile"
 export WORKER_PROFILE_NAME="kubernetes-worker-profile"
-export TARGET_IMAGE="${ROOT_IMG_NAME}-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${CONTAINER_ENGINE}-${SEED_ARCH}"
 export REGISTRY=fred78290
 export RESUME=NO
 export EXTERNAL_ETCD=false
@@ -224,7 +222,7 @@ Options are:
 
 ### Flags to set the template vm
 
---target-image=<value>                           # Override the prefix template VM image used for created VM, default ${ROOT_IMG_NAME}
+--target-image=<value>                           # Override the template VM image used for created VM, default ${TARGET_IMAGE}
 --seed-image=<value>                             # Override the seed image name used to create template, default ${SEED_IMAGE}
 --seed-user=<value>                              # Override the seed user in template, default ${SEED_USER}
 --arch=<value>                                   # Specify the architecture of VM (amd64|arm64), default ${SEED_ARCH}
@@ -469,7 +467,7 @@ while true; do
         ;;
 
     --target-image)
-        ROOT_IMG_NAME="$2"
+        TARGET_IMAGE="$2"
         shift 2
         ;;
 
@@ -708,6 +706,17 @@ else
     exit -1
 fi
 
+if [ -z ${TARGET_IMAGE} ]; then
+    ROOT_IMG_NAME=$(aws ec2 describe-images --image-ids ${SEED_IMAGE} | jq -r '.Images[0].Name//""' | gsed -E 's/.+ubuntu-(\w+)-.+/\1-k8s/')
+
+    if [ "${ROOT_IMG_NAME}" = "-k8s" ]; then
+        echo_red_bold "AMI: ${SEED_IMAGE} not found or not ubuntu, exit"
+        exit
+    fi
+
+    TARGET_IMAGE="${ROOT_IMG_NAME}-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${CONTAINER_ENGINE}-${SEED_ARCH}"
+fi
+
 MACHINES_TYPES=$(jq --argjson VOLUME_SIZE ${VOLUME_SIZE} --arg VOLUME_TYPE ${VOLUME_TYPE} 'with_entries(.value += {"diskType": $VOLUME_TYPE, "diskSize": $VOLUME_SIZE})' templates/machines/${SEED_ARCH}.json)
 
 export SSH_KEY_FNAME="$(basename ${SSH_PRIVATE_KEY})"
@@ -852,7 +861,6 @@ elif [ ${#VPC_PRIVATE_SUBNET_IDS[@]} = 2 ]; then
     VPC_PRIVATE_SUBNET_IDS+=(${VPC_PRIVATE_SUBNET_IDS[1]})
 fi
 
-TARGET_IMAGE="${ROOT_IMG_NAME}-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${CONTAINER_ENGINE}-${SEED_ARCH}"
 KEYEXISTS=$(aws ec2 describe-key-pairs --profile ${AWS_PROFILE} --region ${AWS_REGION} --key-names "${SSH_KEYNAME}" | jq -r '.KeyPairs[].KeyName // ""')
 ECR_PASSWORD=$(aws ecr get-login-password  --profile ${AWS_PROFILE} --region us-west-2)
 
@@ -1058,7 +1066,6 @@ export PUBLIC_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME}
 export PRIVATE_DOMAIN_NAME=${PRIVATE_DOMAIN_NAME}
 export CERT_DOMAIN=${CERT_DOMAIN}
 export REGISTRY=${REGISTRY}
-export ROOT_IMG_NAME=${ROOT_IMG_NAME}
 export SCALEDOWNDELAYAFTERADD=${SCALEDOWNDELAYAFTERADD}
 export SCALEDOWNDELAYAFTERDELETE=${SCALEDOWNDELAYAFTERDELETE}
 export SCALEDOWNDELAYAFTERFAILURE=${SCALEDOWNDELAYAFTERFAILURE}
