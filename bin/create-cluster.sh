@@ -13,7 +13,7 @@ export IPADDR=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
 export LOCALHOSTNAME=$(curl -s http://169.254.169.254/latest/meta-data/local-hostname)
 export INSTANCEID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
 export REGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)
-export ZONEID=$(curl http://169.254.169.254/latest/meta-data/placement/availability-zone)
+export ZONEID=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
 export INSTANCENAME=$(aws ec2  describe-instances --region $REGION --instance-ids $INSTANCEID | jq -r '.Reservations[0].Instances[0].Tags[]|select(.Key == "Name")|.Value')
 export AWS_DOMAIN=${LOCALHOSTNAME#*.*}
 export MAC_ADDRESS="$(curl -s http://169.254.169.254/latest/meta-data/mac)"
