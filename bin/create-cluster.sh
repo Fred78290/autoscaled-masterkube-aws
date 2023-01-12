@@ -409,6 +409,7 @@ if [ "$CNI_PLUGIN" = "aws" ]; then
     echo "Install AWS network"
 
     KUBERNETES_MINOR_RELEASE=$(kubectl version -o json | jq -r .serverVersion.minor)
+    UBUNTU_VERSION_ID=$(cat /etc/os-release | grep VERSION_ID | tr -d '"' | cut -d '=' -f 2 | cut -d '.' -f 1)
 
     if [ $KUBERNETES_MINOR_RELEASE -gt 24 ]; then
       AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.12.1/config/master/aws-k8s-cni.yaml
@@ -429,6 +430,11 @@ if [ "$CNI_PLUGIN" = "aws" ]; then
           | sed -e 's/mountPath: \/var\/run\/dockershim\.sock/mountPath: \/var\/run\/cri\.sock/g' -e 's/path: \/var\/run\/dockershim\.sock/path: \/var\/run\/containerd\/containerd\.sock/g' > cni-aws.yaml
     else
       curl -s ${AWS_CNI_URL} > cni-aws.yaml
+    fi
+
+    # https://github.com/aws/amazon-vpc-cni-k8s/issues/2103
+    if [ ${UBUNTU_VERSION_ID} -ge 22 ]; then
+      sed -i '/ENABLE_IPv6/i\            - name: ENABLE_NFTABLES\n              value: "true"' cni-aws.yaml
     fi
 
     kubectl apply -f cni-aws.yaml

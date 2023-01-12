@@ -77,8 +77,8 @@ export SILENT="&> /dev/null"
 # aws region eu-west1
 export SEED_ARCH=amd64
 export SEED_USER=ubuntu
-export SEED_IMAGE_AMD64="ami-08ca3fed11864d6bb"
-export SEED_IMAGE_ARM64="ami-0c0a42948ea1b4f44"
+export SEED_IMAGE_AMD64="ami-029cfca952b331b52"
+export SEED_IMAGE_ARM64="ami-06a2c4acf333cc050"
 
 export SSL_LOCATION=${PWD}/etc/ssl
 export CONFIGURATION_LOCATION=${PWD}

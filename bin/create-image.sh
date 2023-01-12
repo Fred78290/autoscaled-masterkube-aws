@@ -384,6 +384,8 @@ systemctl restart systemd-timesyncd.service
 
 # Add some EKS init 
 if [ $CNI_PLUGIN = "aws" ]; then
+    UBUNTU_VERSION_ID=$(cat /etc/os-release | grep VERSION_ID | tr -d '"' | cut -d '=' -f 2 | cut -d '.' -f 1)
+    
     mkdir -p /etc/eks
     mkdir -p /etc/sysconfig
     wget https://raw.githubusercontent.com/awslabs/amazon-eks-ami/master/files/eni-max-pods.txt -O /etc/eks/eni-max-pods.txt
@@ -394,6 +396,16 @@ if [ $CNI_PLUGIN = "aws" ]; then
 
     sudo systemctl daemon-reload
     sudo systemctl enable iptables-restore
+
+    # https://github.com/aws/amazon-vpc-cni-k8s/issues/2103#issuecomment-1321698870
+    if [ $UBUNTU_VERSION_ID -ge 22 ]; then
+        echo -e "\x1B[90m= \x1B[31m\x1B[1m\x1B[31mWARNING: Patch network for aws with ubuntu 22.x, see issue: https://github.com/aws/amazon-vpc-cni-k8s/issues/2103\x1B[0m\x1B[39m"
+        mkdir -p /etc/systemd/network/99-default.link.d/
+        cat << SHELL > /etc/systemd/network/99-default.link.d/aws-cni-workaround.conf
+[Link]
+MACAddressPolicy=none
+SHELL
+    fi
 fi
 
 echo "==============================================================================================================================="
