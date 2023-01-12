@@ -1290,7 +1290,7 @@ EOF
                 MACHINE_TYPE=${NGINX_MACHINE}
 
                 # Use subnet public for NGINX Load balancer
-                if [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ]; then
+                if [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ] && [ "${USE_NLB}" = "NO" ]; then
                     PUBLICIP=true
                     IAM_PROFILE_OPTIONS=
                 fi
@@ -1308,7 +1308,7 @@ EOF
 
             # Use subnet public for NGINX Load balancer
             if [ ${INDEX} -lt ${CONTROLNODE_INDEX} ]; then
-                if [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ]; then
+                if [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ] && [ "${USE_NLB}" = "NO" ]; then
                     PUBLICIP=true
                     IAM_PROFILE_OPTIONS=
                 fi
