@@ -44,6 +44,7 @@ export WORKERNODES=3
 export MINNODES=0
 export MAXNODES=9
 export MAXTOTALNODES=${MAXNODES}
+export GRPC_PROVIDER=externalgrpc
 export CORESTOTAL="0:16"
 export MEMORYTOTAL="0:48"
 export MAXAUTOPROVISIONNEDNODEGROUPCOUNT="1"
@@ -228,7 +229,7 @@ Options are:
 --arch=<value>                                   # Specify the architecture of VM (amd64|arm64), default ${SEED_ARCH}
 
 ### Flags for autoscaler
-
+--cloudprovider=<value>                          # autoscaler flag <grpc|externalgrpc>, default: $GRPC_PROVIDER
 --max-nodes-total=<value>                        # autoscaler flag, default: ${MAXTOTALNODES}
 --cores-total=<value>                            # autoscaler flag, default: ${CORESTOTAL}
 --memory-total=<value>                           # autoscaler flag, default: ${MEMORYTOTAL}
@@ -243,7 +244,7 @@ Options are:
 EOF
 }
 
-TEMP=$(getopt -o hvxr --long use-zerossl,zerossl-eab-kid:,zerossl-eab-hmac-secret:,godaddy-key:,godaddy-secret:,route53-profile:,route53-zone-id:,cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
+TEMP=$(getopt -o hvxr --long cloudprovider:,use-zerossl,zerossl-eab-kid:,zerossl-eab-hmac-secret:,godaddy-key:,godaddy-secret:,route53-profile:,route53-zone-id:,cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -544,6 +545,10 @@ while true; do
         ;;
 
     # Same argument as cluster-autoscaler
+    --cloudprovider)
+        GRPC_PROVIDER="$2"
+        shift 2
+        ;;
     --max-nodes-total)
         MAXTOTALNODES="$2"
         shift 2
@@ -598,6 +603,11 @@ while true; do
         ;;
     esac
 done
+
+if [ "${GRPC_PROVIDER}" != "grpc" ] && [ "${GRPC_PROVIDER}" != "externalgrpc" ]; then
+    echo_red_bold "Unsupported cloud provider: ${GRPC_PROVIDER}, only grpc|externalgrpc, exit"
+    exit
+fi
 
 case "--${CLOUD_PROVIDER}" in
     --aws|--external)
@@ -1100,6 +1110,7 @@ export ZEROSSL_EAB_KID=${ZEROSSL_EAB_KID}
 export ZEROSSL_EAB_HMAC_SECRET=${ZEROSSL_EAB_HMAC_SECRET}
 export GODADDY_API_KEY=${GODADDY_API_KEY}
 export GODADDY_API_SECRET=${GODADDY_API_SECRET}
+export GRPC_PROVIDER=${GRPC_PROVIDER}
 EOF
 else
     source ${TARGET_CONFIG_LOCATION}/buildenv
@@ -2167,9 +2178,19 @@ kubeconfig-merge.sh ${MASTERKUBE} ${TARGET_CLUSTER_LOCATION}/config
 
 echo_blue_bold "Write aws autoscaler provider config"
 
-echo $(eval "cat <<EOF
-$(<./templates/cluster/grpc-config.json)
-EOF") | jq . >${TARGET_CONFIG_LOCATION}/grpc-config.json
+if [ ${GRPC_PROVIDER} = "grpc" ]; then
+    CLOUDPROVIDER_CONFIG=${TARGET_CONFIG_LOCATION}/grpc-config.json
+    cat > ${CLOUDPROVIDER_CONFIG} <<EOF
+    {
+        "address": "$CONNECTTO",
+        "secret": "vmware",
+        "timeout": 300
+    }
+EOF
+else
+    CLOUDPROVIDER_CONFIG=${TARGET_CONFIG_LOCATION}/grpc-config.yaml
+    echo "address: $CONNECTTO" > ${CLOUDPROVIDER_CONFIG}
+fi
 
 if [ "${EXTERNAL_ETCD}" = "true" ]; then
     export EXTERNAL_ETCD_ARGS="--use-external-etcd"
