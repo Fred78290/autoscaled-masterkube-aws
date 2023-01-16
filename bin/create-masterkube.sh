@@ -172,7 +172,7 @@ Options are:
 --private-domain=<value>                         # Specify the private domain to use, default ${PRIVATE_DOMAIN_NAME}
 --dashboard-hostname=<value>                     # Specify the hostname for kubernetes dashboard, default ${DASHBOARD_HOSTNAME}
 
-# Cert Manager
+### Cert Manager
 
 --cert-email=<value>                             # Specify the mail for lets encrypt, default ${CERT_EMAIL}
 --use-zerossl                                    # Specify cert-manager to use zerossl, default ${USE_ZEROSSL}
