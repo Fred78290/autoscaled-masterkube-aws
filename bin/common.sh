@@ -1,3 +1,4 @@
+
 if [ "$(uname -s)" == "Darwin" ]; then
 
     if [ -z "$(command -v cfssl)" ]; then
@@ -20,17 +21,11 @@ if [ "$(uname -s)" == "Darwin" ]; then
         exit 1
     fi
 
-    function base64() {
-        gbase64 $@
-    }
+    shopt -s expand_aliases
 
-    function sed() {
-        gsed $@
-    }
-
-    function getopt() {
-        /usr/local/opt/gnu-getopt/bin/getopt $@
-    }
+    alias base64=gbase64
+    alias sed=gsed
+    alias getopt=/usr/local/opt/gnu-getopt/bin/getopt
 fi
 
 function verbose() {
