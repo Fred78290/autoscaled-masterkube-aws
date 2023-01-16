@@ -29,6 +29,9 @@ case $KUBERNETES_MINOR_RELEASE in
         CLUSTER_AUTOSCALER_VERSION=v1.26.0
         AWS_AUTOSCALER_VERSION=v1.26.0
         ;;
+    *)
+        echo "Former version aren't supported by aws autoscaler"
+        exit 1
 esac
 
 mkdir -p $ETC_DIR
