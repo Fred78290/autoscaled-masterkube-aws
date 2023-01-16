@@ -99,6 +99,12 @@ export VPC_PRIVATE_SECURITY_GROUPID=
 # GODADDY account
 export GODADDY_API_KEY=
 export GODADDY_API_SECRET=
+
+# ZeroSSL account
+export ZEROSSL_API_KEY=
+export ZEROSSL_EAB_KID=
+export ZEROSSL_EAB_HMAC_SECRET=
+
 ```
 
 The simply way to create the masterkube is to run [create-masterkube.sh](create-masterkube.sh)
@@ -167,7 +173,6 @@ During the process the script will create many files located in
 | `--zerossl-eab-hmac-secret=<value>` | Specify zerossl eab hmac secret.||
 | `--godaddy-key=<value>` | Specify godaddy api key.||
 | `--godaddy-secret=<value>` | Specify godaddy api secret.||
-
 | **Flags to expose nodes in public AZ with public IP** |
 | `--control-plane-public` | Control plane are hosted in public subnet with public IP. | |
 | `--no-control-plane-public` | Control plane are hosted in private subnet. | default |
@@ -233,8 +238,8 @@ create-masterkube \
     --private-subnet-id=subnet-ABC,subnet-DEF,subnet-GHI \
     --private-sg-id=sg-5678 \
     --arch=arm64 \
-    --cni-plugin=calico \
-    --cloud-provider=none
+    --cni-plugin=aws \
+    --cloud-provider=external
 ```
 
 ## Machine type
