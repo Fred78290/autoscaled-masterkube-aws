@@ -58,7 +58,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: external-dns
-          image: k8s.gcr.io/external-dns/external-dns:v0.10.2
+          image: k8s.gcr.io/external-dns/external-dns:v0.12.2
           imagePullPolicy: Always
           resources:
             limits:
@@ -70,7 +70,6 @@ spec:
           args:
             - --source=ingress
             - --registry=txt
-            - --source=ingress
             - --log-level=info
             - --domain-filter=__DOMAIN_NAME__
             - --annotation-filter=external-dns.alpha.kubernetes.io/register=true

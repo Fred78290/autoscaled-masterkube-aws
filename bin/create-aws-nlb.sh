@@ -1,25 +1,24 @@
 #!/bin/bash
 set -e
 
+CURDIR=$(dirname $0)
+
 AWS_PROFILE=
 AWS_REGION=
 AWS_VPCID=
 AWS_PRIVATE_SUBNETID=()
 AWS_PUBLIC_SUBNETID=()
 AWS_SECURITY_GROUP=
-AWS_INSTANCES_ID=
 AWS_CERT_ARN=
-AWS_NLB_PORT=6443
-AWS_TARGET_PORT=6443
+AWS_TARGET_PORT=(80 443 6443)
 AWS_NLB_NAME=
 AWS_USE_PUBLICIP=false
+PUBLIC_INSTANCES_ID=
+CONTROLPLANE_INSTANCES_ID=
 
-function echo_red() {
-	# echo message in red
-	echo -e "\e[31m$1\e[39m"
-}
+source ${CURDIR}/common.sh
 
-TEMP=`getopt -o n:p:r:s:x --long cert-arn:,trace,expose-public:,name:,profile:,region:,target-vpc-id:,private-subnet-id:,public-subnet-id:,nlb-port:,target-port:,security-group:,instances-id: -n "$0" -- "$@"`
+TEMP=`getopt -o n:p:r:s:x --long cert-arn:,trace,expose-public:,name:,profile:,region:,target-vpc-id:,private-subnet-id:,public-subnet-id:,target-port:,security-group:,public-instances-id:,controlplane-instances-id: -n "$0" -- "$@"`
 eval set -- "$TEMP"
 
 # extract options and their arguments into variables.
@@ -54,20 +53,20 @@ while true ; do
             AWS_SECURITY_GROUP="$2"
             shift 2
             ;;
-        --instances-id)
-            IFS=, read -a AWS_INSTANCES_ID <<< $2
+        --public-instances-id)
+            IFS=, read -a PUBLIC_INSTANCES_ID <<< "$2"
+            shift 2
+            ;;
+        --controlplane-instances-id)
+            IFS=, read -a CONTROLPLANE_INSTANCES_ID <<< "$2"
             shift 2
             ;;
         --public-subnet-id)
-            IFS=, read -a AWS_PUBLIC_SUBNETID <<< $2
+            IFS=, read -a AWS_PUBLIC_SUBNETID <<< "$2"
             shift 2
             ;;
         --private-subnet-id)
-            IFS=, read -a AWS_PRIVATE_SUBNETID <<< $2
-            shift 2
-            ;;
-        --nlb-port)
-            AWS_NLB_PORT="$2"
+            IFS=, read -a AWS_PRIVATE_SUBNETID <<< "$2"
             shift 2
             ;;
         --target-vpc-id)
@@ -75,7 +74,7 @@ while true ; do
             shift 2
             ;;
         --target-port)
-            AWS_TARGET_PORT="$2"
+            IFS=, read -a AWS_TARGET_PORT <<< "$2"
             shift 2
             ;;
         --)
@@ -89,40 +88,53 @@ while true ; do
     esac
 done
 
-if [ -z $AWS_NLB_NAME ]; then
-    echo_red "subnet is not defined"
+if [ -z "$AWS_NLB_NAME" ]; then
+    echo_red_bold "subnet is not defined"
     exit -1
 fi
 
 if [ ${#AWS_PUBLIC_SUBNETID[@]} -eq 0 ]; then
-    echo_red "public subnet is not defined"
+    echo_red_bold "public subnet is not defined"
     exit -1
 fi
 
 if [ ${#AWS_PRIVATE_SUBNETID[@]} -eq 0 ]; then
-    echo_red "private subnet is not defined"
+    echo_red_bold "private subnet is not defined"
     exit -1
 fi
 
-if [ -z $AWS_SECURITY_GROUP ]; then
-    echo_red "security group is not defined"
+if [ -z "$AWS_SECURITY_GROUP" ]; then
+    echo_red_bold "security group is not defined"
     exit -1
 fi
 
-if [ -z $AWS_CERT_ARN ]; then
-    echo_red "certificat arn is not defined"
+if [ -z "$AWS_CERT_ARN" ]; then
+    echo_red_bold "certificat arn is not defined"
     exit -1
 fi
 
-if [ ${#AWS_INSTANCES_ID[@]} -eq 0 ]; then
-    echo_red "instances is not defined"
+if [ ${#PUBLIC_INSTANCES_ID[@]} -eq 0 ]; then
+    echo_red_bold "public instances is not defined"
     exit -1
 fi
+
+if [ ${#CONTROLPLANE_INSTANCES_ID[@]} -eq 0 ]; then
+    echo_red_bold "controlplane instances is not defined"
+    exit -1
+fi
+
+PUBLIC_INSTANCES_IP=
+CONTROLPLANE_INSTANCES_IP=
 
 # Extract IP
-for INSTANCE in $(aws ec2  describe-instances --profile ${AWS_PROFILE} --region ${AWS_REGION} --instance-ids ${AWS_INSTANCES_ID[*]} | jq '.Reservations[].Instances[].PrivateIpAddress')
+for INSTANCE in $(aws ec2  describe-instances --profile ${AWS_PROFILE} --region ${AWS_REGION} --instance-ids ${PUBLIC_INSTANCES_ID[*]} | jq '.Reservations[].Instances[].PrivateIpAddress')
 do
-    INSTANCES+=("Id=$INSTANCE")
+    PUBLIC_INSTANCES_IP+=("Id=$INSTANCE")
+done
+
+for INSTANCE in $(aws ec2  describe-instances --profile ${AWS_PROFILE} --region ${AWS_REGION} --instance-ids ${CONTROLPLANE_INSTANCES_ID[*]} | jq '.Reservations[].Instances[].PrivateIpAddress')
+do
+    CONTROLPLANE_INSTANCES_IP+=("Id=$INSTANCE")
 done
 
 function create_nlb() {
@@ -131,6 +143,7 @@ function create_nlb() {
     local AWS_SUBNETID=$3
     local TARGET_PORTS=$4
     local TYPE=$5
+    local INSTANCES=$6
     local NLB_ARN
     local TARGET_ARN
     local TARGET_PORT
@@ -157,12 +170,13 @@ function create_nlb() {
         fi
 
         TARGET_ARN=$(aws elbv2 create-target-group --profile=${AWS_PROFILE} --region=${AWS_REGION} \
-            --name ${NLB_NAME}-${TARGET_PORT} --protocol ${PROTOCOL} \
+            --name ${NLB_NAME::26}-${TARGET_PORT} \
+            --protocol ${PROTOCOL} \
             --port ${TARGET_PORT} \
             --vpc-id ${AWS_VPCID} \
             --target-type ip | jq -r '.TargetGroups[0].TargetGroupArn')
 
-        aws elbv2 register-targets --profile=${AWS_PROFILE} --region=${AWS_REGION} --target-group-arn ${TARGET_ARN} --targets ${INSTANCES[*]} > /dev/null
+        aws elbv2 register-targets --profile=${AWS_PROFILE} --region=${AWS_REGION} --target-group-arn ${TARGET_ARN} --targets ${INSTANCES} > /dev/null
 
         aws elbv2 create-listener ${CERTIFICAT_ARGS} \
             --profile=${AWS_PROFILE} \
@@ -177,17 +191,17 @@ function create_nlb() {
 }
 
 if [ $AWS_USE_PUBLICIP = "true" ]; then
-    create_nlb "p-${AWS_NLB_NAME}" internet-facing "${AWS_PUBLIC_SUBNETID[*]}" "80 443" network
+    create_nlb "p-${AWS_NLB_NAME}" internet-facing "${AWS_PUBLIC_SUBNETID[*]}" "80 443" network "${PUBLIC_INSTANCES_IP[*]}"
 fi
 
-NLB_ARN=$(create_nlb "${AWS_NLB_NAME}" internal "${AWS_PRIVATE_SUBNETID[*]}" "${AWS_TARGET_PORT}" network)
+NLB_ARN=$(create_nlb "c-${AWS_NLB_NAME}" internal "${AWS_PRIVATE_SUBNETID[*]}" "${AWS_TARGET_PORT[*]}" network "${CONTROLPLANE_INSTANCES_IP[*]}")
 
-echo -n "Wait NLB to start $NLB_ARN"
+echo_blue_dot_title -n "Wait NLB to start $NLB_ARN"
 
 while [ "$(echo "$NBL_DESCRIBE" | jq -r '.LoadBalancers[0].State.Code // ""')" != "active" ];
 do
-    echo -n .
-    sleep 1
+    echo_blue_dot
+    sleep 5
     NBL_DESCRIBE=$(aws elbv2 describe-load-balancers --profile=${AWS_PROFILE} --region=${AWS_REGION} --load-balancer-arns ${NLB_ARN})
 done
 

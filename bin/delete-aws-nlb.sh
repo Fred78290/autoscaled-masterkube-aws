@@ -1,16 +1,14 @@
 #!/bin/bash
 set -e
 
+CURDIR=$(dirname $0)
 NODEGROUP_NAME="aws-ca-k8s"
 MASTERKUBE=${NODEGROUP_NAME}-masterkube
-AWS_NLB_NAME=nlb-${MASTERKUBE}
+AWS_NLB_NAME=${MASTERKUBE}
 AWS_PROFILE=
 AWS_REGION=
 
-function echo_red() {
-	# echo message in red
-	echo -e "\e[31m$1\e[39m"
-}
+source ${CURDIR}/common.sh
 
 TEMP=`getopt -o n:p:r: --long name:,profile:,region: -n "$0" -- "$@"`
 eval set -- "$TEMP"
@@ -71,4 +69,4 @@ function delete_nlb() {
 }
 
 delete_nlb "p-${AWS_NLB_NAME}"
-delete_nlb "${AWS_NLB_NAME}"
+delete_nlb "c-${AWS_NLB_NAME}"

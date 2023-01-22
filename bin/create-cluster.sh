@@ -13,6 +13,7 @@ export IPADDR=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
 export LOCALHOSTNAME=$(curl -s http://169.254.169.254/latest/meta-data/local-hostname)
 export INSTANCEID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
 export REGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)
+export ZONEID=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
 export INSTANCENAME=$(aws ec2  describe-instances --region $REGION --instance-ids $INSTANCEID | jq -r '.Reservations[0].Instances[0].Tags[]|select(.Key == "Name")|.Value')
 export AWS_DOMAIN=${LOCALHOSTNAME#*.*}
 export MAC_ADDRESS="$(curl -s http://169.254.169.254/latest/meta-data/mac)"
@@ -32,7 +33,7 @@ export CLUSTER_DNS="10.96.0.10"
 export CERT_EXTRA_SANS=()
 export MAX_PODS=110
 export PRIVATE_DOMAIN_NAME=
-export ROUTE53_ZONEID=
+export AWS_ROUTE53_ZONE_ID=
 export LOAD_BALANCER_IP=($IPADDR)
 export EXTERNAL_ETCD=false
 export NODEINDEX=0
@@ -114,7 +115,7 @@ while true; do
         shift 2
         ;;
     --load-balancer-ip)
-        IFS=, read -a LOAD_BALANCER_IP <<<$2
+        IFS=, read -a LOAD_BALANCER_IP <<< "$2"
         shift 2
         ;;
     --control-plane-endpoint)
@@ -122,7 +123,7 @@ while true; do
         shift 2
         ;;
     --cluster-nodes)
-        IFS=, read -a CLUSTER_NODES<<<$2
+        IFS=, read -a CLUSTER_NODES <<< "$2"
         shift 2
         ;;
     -k | --kubernetes-version)
@@ -131,7 +132,7 @@ while true; do
         ;;
 
     -s | --cert-extra-sans)
-        IFS=, read -a CERT_EXTRA_SANS<<<$2
+        IFS=, read -a CERT_EXTRA_SANS <<< "$2"
         shift 2
         ;;
 
@@ -146,7 +147,7 @@ while true; do
         ;;
 
     --private-zone-id)
-        ROUTE53_ZONEID="$2"
+        AWS_ROUTE53_ZONE_ID="$2"
         shift 2
         ;;
 
@@ -192,17 +193,15 @@ CNI_PLUGIN=$(echo "$CNI_PLUGIN" | tr '[:upper:]' '[:lower:]')
 
 case $CNI_PLUGIN in
     aws)
-        POD_NETWORK_CIDR="${SUBNET_IPV4_CIDR_BLOCK}"
+        POD_NETWORK_CIDR="${VPC_IPV4_CIDR_BLOCK}"
+        TEN_RANGE=$(echo -n ${VPC_IPV4_CIDR_BLOCK} | grep -c '^10\..*' || true )
 
-        MAC=$(curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/ -s | head -n 1 | sed 's/\/$//')
-        TEN_RANGE=$(curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$MAC/vpc-ipv4-cidr-blocks | grep -c '^10\..*' || true )
-
-        if [[ "$TEN_RANGE" != "0" ]]; then
-          SERVICE_NETWORK_CIDR="172.20.0.0/16"
-          CLUSTER_DNS="172.20.0.10"
-        else
+        if [ $TEN_RANGE -eq 0 ]; then
           CLUSTER_DNS="10.100.0.10"
           SERVICE_NETWORK_CIDR="10.100.0.0/16"
+        else
+          SERVICE_NETWORK_CIDR="172.20.0.0/16"
+          CLUSTER_DNS="172.20.0.10"
         fi
         ;;
     flannel)
@@ -227,7 +226,7 @@ else
 fi
 
 cat > ${KUBEADM_CONFIG} <<EOF
-apiVersion: kubeadm.k8s.io/v1beta2
+apiVersion: kubeadm.k8s.io/v1beta3
 kind: InitConfiguration
 bootstrapTokens:
 - groups:
@@ -241,7 +240,7 @@ localAPIEndpoint:
   advertiseAddress: ${APISERVER_ADVERTISE_ADDRESS}
   bindPort: ${APISERVER_ADVERTISE_PORT}
 nodeRegistration:
-  criSocket: ${CONTAINER_CTL}
+  criSocket: unix://${CONTAINER_CTL}
   name: ${NODENAME}
   taints:
   - effect: NoSchedule
@@ -249,10 +248,8 @@ nodeRegistration:
   - effect: NoSchedule
     key: node-role.kubernetes.io/control-plane
   kubeletExtraArgs:
-    network-plugin: cni
     container-runtime: ${CONTAINER_RUNTIME}
     container-runtime-endpoint: ${CONTAINER_CTL}
-    provider-id: ${SCHEME}://${NODEGROUP_NAME}/object?type=node&name=${INSTANCENAME}
     cloud-provider: "${CLOUD_PROVIDER}"
     node-ip: ${IPADDR}
 ---
@@ -295,12 +292,10 @@ syncFrequency: 0s
 volumeStatsAggPeriod: 0s
 maxPods: ${MAX_PODS}
 ---
-apiVersion: kubeadm.k8s.io/v1beta2
+apiVersion: kubeadm.k8s.io/v1beta3
 kind: ClusterConfiguration
 certificatesDir: /etc/kubernetes/pki
 clusterName: ${NODEGROUP_NAME}
-dns:
-  type: CoreDNS
 imageRepository: k8s.gcr.io
 kubernetesVersion: ${KUBERNETES_VERSION}
 networking:
@@ -313,6 +308,9 @@ controllerManager:
     cloud-provider: "${CLOUD_PROVIDER}"
     configure-cloud-routes: "${CONFIGURE_CLOUD_ROUTE}"
 controlPlaneEndpoint: ${CONTROL_PLANE_ENDPOINT}:${APISERVER_ADVERTISE_PORT}
+dns:
+  imageRepository: k8s.gcr.io/coredns
+  imageTag: v1.9.3
 apiServer:
   extraArgs:
     authorization-mode: Node,RBAC
@@ -337,14 +335,13 @@ done
 
 for CLUSTER_NODE in ${CLUSTER_NODES[*]}
 do
-echo CLUSTER_NODE=$CLUSTER_NODE
-  IFS=: read HOST IP <<< $CLUSTER_NODE
+  IFS=: read HOST IP <<< "$CLUSTER_NODE"
   [ -z ${IP} ] || echo "  - ${IP}" >> ${KUBEADM_CONFIG}
   [ -z ${HOST} ] || echo "  - ${HOST}" >> ${KUBEADM_CONFIG}
   [ -z ${HOST} ] || echo "  - ${HOST%%.*}" >> ${KUBEADM_CONFIG}
 done
 
-    # External ETCD
+# External ETCD
 if [ "$EXTERNAL_ETCD" = "true" ]; then
   cat >> ${KUBEADM_CONFIG} <<EOF
 etcd:
@@ -375,6 +372,8 @@ echo "Retrieve token infos"
 openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | openssl rsa -pubin -outform der 2>/dev/null | openssl dgst -sha256 -hex | sed 's/^.* //' | tr -d '\n' > $CLUSTER_DIR/ca.cert
 kubeadm token list 2>&1 | grep "authentication,signing" | awk '{print $1}'  | tr -d '\n' > $CLUSTER_DIR/token 
 
+echo "Get token:$(cat $CLUSTER_DIR/token)"
+echo "Get cacert:$(cat $CLUSTER_DIR/ca.cert)"
 echo "Set local K8 environement"
 
 mkdir -p $HOME/.kube
@@ -383,52 +382,45 @@ chown $(id -u):$(id -g) $HOME/.kube/config
 
 cp /etc/kubernetes/admin.conf $CLUSTER_DIR/config
 
-if [ "$HA_CLUSTER" = "true" ]; then
+export KUBECONFIG=/etc/kubernetes/admin.conf
+
+mkdir -p $CLUSTER_DIR/kubernetes/pki
+
+cp /etc/kubernetes/pki/ca.crt $CLUSTER_DIR/kubernetes/pki
+cp /etc/kubernetes/pki/ca.key $CLUSTER_DIR/kubernetes/pki
+cp /etc/kubernetes/pki/sa.key $CLUSTER_DIR/kubernetes/pki
+cp /etc/kubernetes/pki/sa.pub $CLUSTER_DIR/kubernetes/pki
+cp /etc/kubernetes/pki/front-proxy-ca.crt $CLUSTER_DIR/kubernetes/pki
+cp /etc/kubernetes/pki/front-proxy-ca.key $CLUSTER_DIR/kubernetes/pki
+
+if [ "$EXTERNAL_ETCD" != "true" ]; then
     mkdir -p $CLUSTER_DIR/kubernetes/pki/etcd
-
-    cp /etc/kubernetes/pki/ca.crt $CLUSTER_DIR/kubernetes/pki
-    cp /etc/kubernetes/pki/ca.key $CLUSTER_DIR/kubernetes/pki
-    cp /etc/kubernetes/pki/sa.key $CLUSTER_DIR/kubernetes/pki
-    cp /etc/kubernetes/pki/sa.pub $CLUSTER_DIR/kubernetes/pki
-    cp /etc/kubernetes/pki/front-proxy-ca.crt $CLUSTER_DIR/kubernetes/pki
-    cp /etc/kubernetes/pki/front-proxy-ca.key $CLUSTER_DIR/kubernetes/pki
-
-    if [ "$EXTERNAL_ETCD" != "true" ]; then
-        cp /etc/kubernetes/pki/etcd/ca.crt $CLUSTER_DIR/kubernetes/pki/etcd/ca.crt
-        cp /etc/kubernetes/pki/etcd/ca.key $CLUSTER_DIR/kubernetes/pki/etcd/ca.key
-    fi
+    cp /etc/kubernetes/pki/etcd/ca.crt $CLUSTER_DIR/kubernetes/pki/etcd/ca.crt
+    cp /etc/kubernetes/pki/etcd/ca.key $CLUSTER_DIR/kubernetes/pki/etcd/ca.key
 fi
 
 chmod -R uog+r $CLUSTER_DIR/*
 
 # Password for AWS cni plugin
-kubectl create secret docker-registry regcred --docker-server=602401143452.dkr.ecr.us-west-2.amazonaws.com --docker-username=AWS --docker-password=${ECR_PASSWORD}
+kubectl create secret docker-registry aws-registry --docker-server=602401143452.dkr.ecr.us-west-2.amazonaws.com --docker-username=AWS --docker-password=${ECR_PASSWORD}
 
 if [ "$CNI_PLUGIN" = "aws" ]; then
 
     echo "Install AWS network"
 
     KUBERNETES_MINOR_RELEASE=$(kubectl version -o json | jq -r .serverVersion.minor)
+    UBUNTU_VERSION_ID=$(cat /etc/os-release | grep VERSION_ID | tr -d '"' | cut -d '=' -f 2 | cut -d '.' -f 1)
 
-    if [ $KUBERNETES_MINOR_RELEASE -gt 20 ]; then
+    if [ $KUBERNETES_MINOR_RELEASE -gt 24 ]; then
+      AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.12.1/config/master/aws-k8s-cni.yaml
+    elif [ $KUBERNETES_MINOR_RELEASE -gt 22 ]; then
+      AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.11/config/master/aws-k8s-cni.yaml
+    elif [ $KUBERNETES_MINOR_RELEASE -gt 20 ]; then
       AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.10/config/master/aws-k8s-cni.yaml
     else
       AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.9.3/config/v1.9/aws-k8s-cni.yaml
     fi
 
-    case "${CONTAINER_ENGINE}" in
-      cri-o)
-        curl -s ${AWS_CNI_URL} | yq e -P - \
-            | sed -e 's/mountPath: \/var\/run\/dockershim\.sock/mountPath: \/var\/run\/cri\.sock/g' -e 's/path: \/var\/run\/dockershim\.sock/path: \/var\/run\/cri\.sock/g' > cni-aws.yaml
-        ;;
-      containerd)
-        curl -s ${AWS_CNI_URL} | yq e -P - \
-            | sed -e 's/mountPath: \/var\/run\/dockershim\.sock/mountPath: \/var\/run\/cri\.sock/g' -e 's/path: \/var\/run\/dockershim\.sock/path: \/var\/run\/containerd\/containerd\.sock/g' > cni-aws.yaml
-        ;;
-      *)
-        curl -s ${AWS_CNI_URL} > cni-aws.yaml
-        ;;
-    esac
 
     if [ $CONTAINER_ENGINE == "cri-o" ]; then
       curl -s ${AWS_CNI_URL} | yq e -P - \
@@ -438,6 +430,11 @@ if [ "$CNI_PLUGIN" = "aws" ]; then
           | sed -e 's/mountPath: \/var\/run\/dockershim\.sock/mountPath: \/var\/run\/cri\.sock/g' -e 's/path: \/var\/run\/dockershim\.sock/path: \/var\/run\/containerd\/containerd\.sock/g' > cni-aws.yaml
     else
       curl -s ${AWS_CNI_URL} > cni-aws.yaml
+    fi
+
+    # https://github.com/aws/amazon-vpc-cni-k8s/issues/2103
+    if [ ${UBUNTU_VERSION_ID} -ge 22 ]; then
+      sed -i '/ENABLE_IPv6/i\            - name: ENABLE_NFTABLES\n              value: "true"' cni-aws.yaml
     fi
 
     kubectl apply -f cni-aws.yaml
@@ -466,10 +463,7 @@ elif [ "$CNI_PLUGIN" = "canal" ]; then
 
     echo "Install canal network"
 
-    kubectl apply -f "https://raw.githubusercontent.com/projectcalico/canal/master/k8s-install/1.7/rbac.yaml" 2>&1
-    kubectl apply -f "https://raw.githubusercontent.com/projectcalico/canal/master/k8s-install/1.7/canal.yaml" 2>&1
-
-    #CNI_SELECTOR="k8s-app=canal"
+    kubectl apply -f "https://raw.githubusercontent.com/projectcalico/calico/v3.24.5/manifests/canal.yaml" 2>&1
 
 elif [ "$CNI_PLUGIN" = "kube" ]; then
 
@@ -478,19 +472,25 @@ elif [ "$CNI_PLUGIN" = "kube" ]; then
     kubectl apply -f "https://raw.githubusercontent.com/cloudnativelabs/kube-router/master/daemonset/kubeadm-kuberouter.yaml" 2>&1
     kubectl apply -f "https://raw.githubusercontent.com/cloudnativelabs/kube-router/master/daemonset/kubeadm-kuberouter-all-features.yaml" 2>&1
 
-    #CNI_SELECTOR="k8s-app=kube-router"
-
 elif [ "$CNI_PLUGIN" = "romana" ]; then
 
     echo "Install romana network"
 
     kubectl apply -f https://raw.githubusercontent.com/romana/romana/master/containerize/specs/romana-kubeadm.yml 2>&1
 
-    #CNI_SELECTOR="romana-app=etcd"
 fi
+
+cat > patch.yaml <<EOF
+spec:
+    providerID: 'aws://${ZONEID}/${INSTANCEID}'
+EOF
+
+kubectl patch node ${NODENAME} --patch-file patch.yaml
 
 kubectl label nodes ${NODENAME} "cluster.autoscaler.nodegroup/name=${NODEGROUP_NAME}" \
     "node-role.kubernetes.io/master=" \
+    "topology.kubernetes.io/region=${REGION}" \
+    "topology.kubernetes.io/zone=${ZONEID}" \
     "master=true" --overwrite
 
 kubectl annotate node ${NODENAME} \

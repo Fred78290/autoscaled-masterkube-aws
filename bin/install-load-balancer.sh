@@ -2,6 +2,8 @@
 
 set -e
 
+export DEBIAN_FRONTEND=noninteractive
+
 CONTROL_PLANE_ENDPOINT=
 MASTER_NODES=
 NET_IP=0.0.0.0
@@ -40,6 +42,8 @@ done
 
 echo "127.0.0.1 ${CONTROL_PLANE_ENDPOINT}" >> /etc/hosts
 
+apt update
+apt dist-upgrade -y
 apt install nginx -y || echo "Need to reconfigure NGINX"
 
 # Remove http default listening
@@ -56,7 +60,7 @@ stream {
 EOF
 
 # Buod stream TCP
-IFS=, read -a MASTER_NODES <<< $MASTER_NODES
+IFS=, read -a MASTER_NODES <<< "$MASTER_NODES"
 
 mkdir -p /etc/nginx/tcpconf.d
 
@@ -72,7 +76,7 @@ EOF
 
     for CLUSTER_NODE in ${MASTER_NODES[*]}
     do
-        IFS=: read HOST IP <<< $CLUSTER_NODE
+        IFS=: read HOST IP <<< "$CLUSTER_NODE"
 
         if [ "x${HOST}" != "x" ]; then
             echo "        server ${IP}:${TCP_PORT} max_fails=3 fail_timeout=30s;" >> $NGINX_CONF

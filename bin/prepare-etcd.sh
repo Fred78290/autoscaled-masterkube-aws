@@ -1,5 +1,9 @@
 #!/bin/bash
-NODEGROUP_NAME="vmware-ca-k8s"
+CURDIR=$(dirname $0)
+
+source ${CURDIR}/common.sh
+
+NODEGROUP_NAME="aws-ca-k8s"
 
 TEMP=$(getopt -o c:g: --long node-group:,cluster-nodes: -n "$0" -- "$@")
 
@@ -34,16 +38,16 @@ ETCDNAMES=()
 
 for CLUSTER_NODE in $(echo -n ${CLUSTER_NODES} | tr ',' ' ')
 do
-    IFS=: read HOST IP <<< ${CLUSTER_NODE}
+    IFS=: read HOST IP <<< "${CLUSTER_NODE}"
 
     ETCDIPS+=($IP)
     ETCDHOSTS+=($HOST)
     ETCDNAMES+=(${HOST%%.*})
 done
 
-mkdir -p ./cluster/${NODEGROUP_NAME}/etcd/ssl
+mkdir -p ${TARGET_CLUSTER_LOCATION}/etcd/ssl
 
-cat > ./cluster/${NODEGROUP_NAME}/etcd/ca-config.json <<EOF
+cat > ${TARGET_CLUSTER_LOCATION}/etcd/ca-config.json <<EOF
 {
   "signing": {
     "default": {
@@ -64,7 +68,7 @@ cat > ./cluster/${NODEGROUP_NAME}/etcd/ca-config.json <<EOF
 }
 EOF
 
-cat > ./cluster/${NODEGROUP_NAME}/etcd/ca-csr.json <<EOF
+cat > ${TARGET_CLUSTER_LOCATION}/etcd/ca-csr.json <<EOF
 {
   "CN": "kubernetes",
   "key": {
@@ -73,17 +77,17 @@ cat > ./cluster/${NODEGROUP_NAME}/etcd/ca-csr.json <<EOF
   },
   "names": [
     {
-        "C": "FR",
-        "ST": "PARIS",
-        "L": "Paris",
-        "O": "k8s",
-        "OU": "System"
+        "C": "US",
+        "ST": "California",
+        "L": "San Francisco",
+        "O": "GitHub",
+        "OU": "Fred78290"
     }
   ]
 }
 EOF
 
-cat > ./cluster/${NODEGROUP_NAME}/etcd/etcd-csr.json <<EOF
+cat > ${TARGET_CLUSTER_LOCATION}/etcd/etcd-csr.json <<EOF
 {
     "CN": "etcd",
     "hosts": [
@@ -104,17 +108,17 @@ cat > ./cluster/${NODEGROUP_NAME}/etcd/etcd-csr.json <<EOF
     },
     "names": [
         {
-            "C": "FR",
-            "ST": "PARIS",
-            "L": "Paris",
-            "O": "k8s",
-            "OU": "System"
+            "C": "US",
+            "ST": "California",
+            "L": "San Francisco",
+            "O": "GitHub",
+            "OU": "Fred78290"
         }
     ]
 }
 EOF
 
-pushd ./cluster/${NODEGROUP_NAME}/etcd
+pushd ${TARGET_CLUSTER_LOCATION}/etcd
 cfssl gencert -initca ca-csr.json | cfssljson -bare ./ssl/ca
 cfssl gencert -ca=./ssl/ca.pem -ca-key=./ssl/ca-key.pem -config=ca-config.json -profile=kubernetes etcd-csr.json | cfssljson -bare ./ssl/etcd
 popd
@@ -127,7 +131,7 @@ do
     HOST=${ETCDHOSTS[$INDEX]}
     NAME=${ETCDNAMES[$INDEX]}
     ETCINDEX="0$((INDEX+1))"
-    SERVICE=./cluster/${NODEGROUP_NAME}/etcd/etcd-${ETCINDEX}.service
+    SERVICE=${TARGET_CLUSTER_LOCATION}/etcd/etcd-${ETCINDEX}.service
 
     cat > ${SERVICE} << EOF
 [Unit]

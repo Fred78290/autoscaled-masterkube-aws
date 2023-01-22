@@ -2,16 +2,17 @@
     "apiVersion": "networking.k8s.io/v1",
     "kind": "Ingress",
     "metadata": {
-        "name": "masterkube-aws-dashboard-server-ingress",
+        "name": "kubernetes-dashboard-server-ingress",
         "namespace": "$K8NAMESPACE",
         "annotations": {
             "nginx.ingress.kubernetes.io/ssl-redirect": "true",
             "nginx.ingress.kubernetes.io/use-regex": "true",
             "nginx.ingress.kubernetes.io/rewrite-target": "$REWRITE_TARGET",
             "nginx.ingress.kubernetes.io/backend-protocol": "HTTPS",
+            "cert-manager.io/cluster-issuer": "cert-issuer-prod",
             "external-dns.alpha.kubernetes.io/register": "true",
             "external-dns.alpha.kubernetes.io/target": "$MASTERKUBE.$DOMAIN_NAME",
-            "external-dns.alpha.kubernetes.io/hostname": "masterkube-aws-dashboard.$DOMAIN_NAME",
+            "external-dns.alpha.kubernetes.io/hostname": "$DASHBOARD_HOSTNAME.$DOMAIN_NAME",
             "external-dns.alpha.kubernetes.io/ttl": "600"
         }
     },
@@ -20,14 +21,14 @@
         "tls": [
             {
                 "hosts": [
-                    "masterkube-aws-dashboard.$DOMAIN_NAME"
+                    "$DASHBOARD_HOSTNAME.$DOMAIN_NAME"
                 ],
-                "secretName": "$K8NAMESPACE"
+                "secretName": "masterkube-dashboard-tls"
             }
         ],
         "rules": [
             {
-                "host": "masterkube-aws-dashboard.$DOMAIN_NAME",
+                "host": "$DASHBOARD_HOSTNAME.$DOMAIN_NAME",
                 "http": {
                     "paths": [
 						{

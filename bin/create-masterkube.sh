@@ -8,19 +8,35 @@
 set -e
 
 CURDIR=$(dirname $0)
+OUTPUT=${CURDIR}/../config/deploy.log
+TIMEFORMAT='It takes %R seconds to complete this task...'
 
+echo -n > ${OUTPUT}
+
+echo "==================================================================================" | tee -a ${OUTPUT}
+echo "Start at: " $(date) | tee -a ${OUTPUT}
+echo "==================================================================================" | tee -a ${OUTPUT}
+echo | tee -a ${OUTPUT}
+
+time {
+
+pushd ${CURDIR}/../ &> /dev/null
+
+export PATH=${PWD}/bin:${PATH}
+export CACHE=$HOME/.local/aws/cache
 export SCHEME="aws"
 export NODEGROUP_NAME="aws-ca-k8s"
 export MASTERKUBE="${NODEGROUP_NAME}-masterkube"
+export DASHBOARD_HOSTNAME=masterkube-aws-dashboard
 export SSH_PRIVATE_KEY=~/.ssh/id_rsa
 export SSH_PUBLIC_KEY="${SSH_PRIVATE_KEY}.pub"
 export KUBERNETES_VERSION=$(curl -sSL https://dl.k8s.io/release/stable.txt)
 export KUBECONFIG=${HOME}/.kube/config
-export ROOT_IMG_NAME=focal-k8s
-export CNI_PLUGIN_VERSION=v1.1.0
+export CNI_PLUGIN_VERSION=v1.1.1
 export CNI_PLUGIN=aws
 export CLOUD_PROVIDER=aws
 export USE_NLB=NO
+export USE_ZEROSSL=YES
 export HA_CLUSTER=false
 export FIRSTNODE_INDEX=0
 export CONTROLNODES=1
@@ -28,6 +44,7 @@ export WORKERNODES=3
 export MINNODES=0
 export MAXNODES=9
 export MAXTOTALNODES=${MAXNODES}
+export GRPC_PROVIDER=externalgrpc
 export CORESTOTAL="0:16"
 export MEMORYTOTAL="0:48"
 export MAXAUTOPROVISIONNEDNODEGROUPCOUNT="1"
@@ -37,7 +54,9 @@ export SCALEDOWNDELAYAFTERDELETE="1m"
 export SCALEDOWNDELAYAFTERFAILURE="1m"
 export SCALEDOWNUNEEDEDTIME="1m"
 export SCALEDOWNUNREADYTIME="1m"
-export DEFAULT_MACHINE="t3a.medium"
+export AUTOSCALE_MACHINE="t3a.medium"
+export CONTROL_PLANE_MACHINE="t3a.medium"
+export WORKER_NODE_MACHINE="t3a.medium"
 export NGINX_MACHINE="t3a.small"
 export UNREMOVABLENODERECHECKTIMEOUT="1m"
 export OSDISTRO=$(uname -s)
@@ -48,115 +67,68 @@ export VOLUME_SIZE=10
 export MAX_PODS=110
 export MASTER_PROFILE_NAME="kubernetes-master-profile"
 export WORKER_PROFILE_NAME="kubernetes-worker-profile"
-export TARGET_IMAGE="${ROOT_IMG_NAME}-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${CONTAINER_ENGINE}-${SEED_ARCH}"
 export REGISTRY=fred78290
 export RESUME=NO
 export EXTERNAL_ETCD=false
 export CONTAINER_ENGINE=containerd
+export USE_NGINX_GATEWAY=NO
+export PREFER_SSH_PUBLICIP=NO
 export SILENT="&> /dev/null"
 
 # aws region eu-west1
 export SEED_ARCH=amd64
 export SEED_USER=ubuntu
-export SEED_IMAGE_AMD64="ami-08ca3fed11864d6bb"
-export SEED_IMAGE_ARM64="ami-0c0a42948ea1b4f44"
+export SEED_IMAGE_AMD64="ami-029cfca952b331b52"
+export SEED_IMAGE_ARM64="ami-06a2c4acf333cc050"
+
+export SSL_LOCATION=${PWD}/etc/ssl
+export CONFIGURATION_LOCATION=${PWD}
+export AWSDEFS=${PWD}/bin/aws.defs
 
 # defined in private aws.defs
-export AWSDEFS=${CURDIR}/aws.defs
+export CERT_EMAIL=
 export MASTER_INSTANCE_PROFILE_ARN= #"<to be filled>"
 export WORKER_INSTANCE_PROFILE_ARN= #"<to be filled>"
 export VPC_PUBLIC_SUBNET_ID= #"<to be filled>"
 export VPC_PUBLIC_SECURITY_GROUPID= #"<to be filled>"
 export VPC_PRIVATE_SUBNET_ID= #"<to be filled>"
 export VPC_PRIVATE_SECURITY_GROUPID= #"<to be filled>"
-export ROUTE53_ZONEID= #"<to be filled>"
+export AWS_ROUTE53_ZONE_ID= #"<to be filled>"
 
-export EXPOSE_PUBLIC_CLUSTER=true
-export CONTROLPLANE_USE_PUBLICIP=true
+# optional defined in private aws.defs for debug aws-autoscaler locally
+export AWS_ACCESSKEY= #"<to be filled>"
+export AWS_SECRETKEY= #"<to be filled>"
+export AWS_TOKEN= #"<to be filled>"
+
+export AWS_ROUTE53_ACCESSKEY= #"<to be filled>"
+export AWS_ROUTE53_SECRETKEY= #"<to be filled>"
+export AWS_ROUTE53_TOKEN= #"<to be filled>"
+
+export EXPOSE_PUBLIC_CLUSTER=false
+export CONTROLPLANE_USE_PUBLICIP=false
 export WORKERNODE_USE_PUBLICIP=false
 
 export LAUNCH_CA=YES
 export PRIVATE_DOMAIN_NAME=
+export PUBLIC_DOMAIN_NAME=
 
 VPC_PUBLIC_SUBNET_IDS=()
 VPC_PRIVATE_SUBNET_IDS=()
 LAUNCHED_INSTANCES=()
 RESERVED_ENI=()
-RESERVED_IPS=()
+PRIVATE_ADDR_IPS=()
+PUBLIC_ADDR_IPS=()
+DELETE_CLUSTER=NO
+
+source ${CURDIR}/common.sh
 
 # import hidded definitions
-source ${AWSDEFS}
+if [ -f ${AWSDEFS} ]; then
+    source ${AWSDEFS}
+fi
 
 SSH_OPTIONS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 SCP_OPTIONS="${SSH_OPTIONS} -r"
-
-if [ "$(uname -s)" == "Linux" ]; then
-    SED=sed
-else
-    SED=gsed
-fi
-
-function verbose() {
-    if [ ${VERBOSE} = "YES" ]; then
-        eval "$1"
-    else
-        eval "$1 &> /dev/null"
-    fi
-}
-
-function wait_jobs_finish() {
-    while :
-    do
-        if test "$(jobs | wc -l)" -eq 0; then
-            break
-        fi
-
-    wait -n
-    done
-
-    wait
-}
-
-function echo_blue_dot() {
-	>&2 echo -n -e "\e[90m\e[39m\e[1m\e[34m.\e[0m\e[39m"
-}
-
-function echo_blue_dot_title() {
-	# echo message in blue and bold
-	>&2 echo -n -e "\e[90m= \e[39m\e[1m\e[34m$1\e[0m\e[39m"
-}
-
-function echo_blue_bold() {
-	# echo message in blue and bold
-	>&2 echo -e "\e[90m= \e[39m\e[1m\e[34m$1\e[0m\e[39m"
-}
-
-function echo_title() {
-	# echo message in blue and bold
-    echo_line
-	echo_blue_bold "$1"
-    echo_line
-}
-
-function echo_grey() {
-	# echo message in light grey
-	>&2 echo -e "\e[90m$1\e[39m"
-}
-
-function echo_red() {
-	# echo message in red
-	>&2 echo -e "\e[31m$1\e[39m"
-}
-
-function echo_separator() {
-    echo_line
-	>&2 echo
-	>&2 echo
-}
-
-function echo_line() {
-	echo_grey "============================================================================================================================="
-}
 
 function usage() {
 cat <<EOF
@@ -166,61 +138,98 @@ Options are:
 --verbose | -v                                   # Verbose
 --resume | -r                                    # Allow resume interrupted creation of cluster kubernetes
 --trace | -x                                     # Trace execution
+--delete                                         # Delete cluster and exit
 --create-image-only                              # Create image only
+--cache=<path>                                   # Cache location, default ${CACHE}
+
+### Flags to set some location informations
+
+--configuration-location=<path>                  # Specify where configuration will be stored, default ${CONFIGURATION_LOCATION}
+--ssl-location=<path>                            # Specify where the etc/ssl dir is stored, default ${SSL_LOCATION}
+--aws-defs=<path>                                # Specify the AWS defintions file, default ${AWSDEFS}
 
 ### Flags to set AWS informations
 
 --profile | -p=<value>                           # Specify AWS profile, default ${AWS_PROFILE}
---route53-profile=<value>                        # Specify AWS profile for route53, default ${AWS_PROFILE_ROUTE53}
 --region | -r=<value>                            # Specify AWS region, default ${AWS_REGION}
+
+--route53-profile=<value>                        # Specify AWS profile for route53 if different, default ${AWS_PROFILE_ROUTE53}
+--route53-zone-id=<value>                        # Specify Route53 for private DNS, default ${AWS_ROUTE53_ZONE_ID}
 
 ### Design the kubernetes cluster
 
---ha-cluster | -c                                # Allow to create an HA cluster, default ${HA_CLUSTER}
---worker-nodes=<value>                           # Specify the number of worker node created in HA cluster, default ${WORKERNODES}
+--ha-cluster                                     # Allow to create an HA cluster, default ${HA_CLUSTER}
+--worker-nodes=<value>                           # Specify the number of worker nodes created in HA cluster, default ${WORKERNODES}
 --container-runtime=<docker|containerd|cri-o>    # Specify which OCI runtime to use, default ${CONTAINER_ENGINE}
---internet-facing/--no-internet-facing           # Specify if the cluster is exposed on internet port: 80 443, default ${EXPOSE_PUBLIC_CLUSTER}
---max-pods                                       # Specify the max pods per created VM, default ${MAX_PODS}
+--internet-facing                                # Expose the cluster on internet port: 80 443, default ${EXPOSE_PUBLIC_CLUSTER}
+--no-internet-facing                             # Don't expose the cluster on internet, default ${EXPOSE_PUBLIC_CLUSTER}
+--max-pods=<value>                               # Specify the max pods per created VM, default ${MAX_PODS}
+--create-nginx-apigateway                        # Create NGINX instance to install an apigateway, default ${USE_NGINX_GATEWAY}
+--dont-create-nginx-apigateway                   # Don't create NGINX instance to install an apigateway, default ${USE_NGINX_GATEWAY}
 
-### Flags in single master node only
+### Design domain
 
---control-plane-public/--no-control-plane-public # Specify if master is hosted in public subnet, default ${CONTROLPLANE_USE_PUBLICIP}
---worker-node-public/--no-worker-node-public     # Specify if worker nodes asre hosted in public subnet, default ${WORKERNODE_USE_PUBLICIP}
+--public-domain=<value>                          # Specify the public domain to use, default ${PUBLIC_DOMAIN_NAME}
+--private-domain=<value>                         # Specify the private domain to use, default ${PRIVATE_DOMAIN_NAME}
+--dashboard-hostname=<value>                     # Specify the hostname for kubernetes dashboard, default ${DASHBOARD_HOSTNAME}
+
+### Cert Manager
+
+--cert-email=<value>                             # Specify the mail for lets encrypt, default ${CERT_EMAIL}
+--use-zerossl                                    # Specify cert-manager to use zerossl, default ${USE_ZEROSSL}
+--dont-use-zerossl                               # Specify cert-manager to use letsencrypt, default ${USE_ZEROSSL}
+--zerossl-eab-kid=<value>                        # Specify zerossl eab kid, default ${ZEROSSL_EAB_KID}
+--zerossl-eab-hmac-secret=<value>                # Specify zerossl eab hmac secret, default ${ZEROSSL_EAB_HMAC_SECRET}
+--godaddy-key                                    # Specify godaddy api key
+--godaddy-secret                                 # Specify godaddy api secret
+
+### Flags to expose nodes in public AZ with public IP
+
+--control-plane-public                           # Control plane are hosted in public subnet with public IP, default ${CONTROLPLANE_USE_PUBLICIP}
+--no-control-plane-public                        # Control plane are hosted in private subnet, default ${CONTROLPLANE_USE_PUBLICIP}
+--worker-node-public                             # Worker nodes are hosted in public subnet with public IP, default ${WORKERNODE_USE_PUBLICIP}
+--no-worker-node-public                          # Worker nodes are hosted in private subnet, default ${WORKERNODE_USE_PUBLICIP}
 
 ### Flags in ha mode only
 
---create-external-etcd | -e                      # Allow to create an external HA etcd cluster, default ${EXTERNAL_ETCD}
---use-nlb | -u                                   # Allow to use AWS ELB as load balancer else NGINX is used in public vpc
+--create-external-etcd                           # Create an external HA etcd cluster, default ${EXTERNAL_ETCD}
+--use-nlb                                        # Use AWS NLB as load balancer in public AZ
+--dont-use-nlb                                   # Use NGINX as load balancer in public AZ
 
 ### Flags in both mode
 
---default-machine | -d=<value>                   # Override machine type used for auto scaling, default ${DEFAULT_MACHINE}
---ssh-private-key | -s=<value>                   # Override ssh key is used, default ${SSH_PRIVATE_KEY}
---transport | -t=<value>                         # Override the transport to be used between autoscaler and aws-autoscaler, default ${TRANSPORT}
---no-cloud-provider                              # Set cloud provider to none, default $CLOUD_PROVIDER
+--prefer-ssh-publicip                            # Allow to SSH on publicip when available, default ${PREFER_SSH_PUBLICIP}
+--dont-prefer-ssh-publicip                       # Disallow to SSH on publicip when available, default ${PREFER_SSH_PUBLICIP}
+--control-plane-machine=<value>                  # Override machine type used for control plane, default ${CONTROL_PLANE_MACHINE}
+--worker-node-machine=<value>                    # Override machine type used for worker nodes, default ${WORKER_NODE_MACHINE}
+--autoscale-machine=<value>                      # Override machine type used for auto scaling, default ${AUTOSCALE_MACHINE}
+--nginx-machine=<value>                          # The instance type name to deploy front nginx node, default ${NGINX_MACHINE}
+--ssh-private-key=<path>                         # Override ssh key is used, default ${SSH_PRIVATE_KEY}
+--transport=<value>                              # Override the transport to be used between autoscaler and aws-autoscaler, default ${TRANSPORT}
+--cloud-provider=<value>                         # Set cloud provider, (aws | external | none) default $CLOUD_PROVIDER
 --node-group=<value>                             # Override the node group name, default ${NODEGROUP_NAME}
 --cni-plugin-version=<value>                     # Override CNI plugin version, default: ${CNI_PLUGIN_VERSION}
 --cni-plugin=<value>                             # Override CNI plugin, default: ${CNI_PLUGIN}
 --kubernetes-version | -k=<value>                # Override the kubernetes version, default ${KUBERNETES_VERSION}
---volume-type                                    # Override the root EBS volume type, default ${VOLUME_TYPE}
---volume-size                                    # Override the root EBS volume size in Gb, default ${VOLUME_SIZE}
+--volume-type=<value>                            # Override the root EBS volume type, default ${VOLUME_TYPE}
+--volume-size=<value>                            # Override the root EBS volume size in Gb, default ${VOLUME_SIZE}
 
 ### Flags to configure network in aws
 
---public-subnet-id                               # Specify the public subnet ID for created VM, default ${VPC_PUBLIC_SUBNET_ID}
---public-sg-id                                   # Specify the public security group ID for VM, default ${VPC_PUBLIC_SECURITY_GROUPID}
---private-subnet-id                              # Specify the private subnet ID for created VM, default ${VPC_PRIVATE_SUBNET_ID}
---private-sg-id                                  # Specify the private security group ID for VM, default ${VPC_PRIVATE_SECURITY_GROUPID}
+--public-subnet-id=<subnetid,...>                # Specify the public subnet ID for created VM, default ${VPC_PUBLIC_SUBNET_ID}
+--public-sg-id=<sg-id>                           # Specify the public security group ID for VM, default ${VPC_PUBLIC_SECURITY_GROUPID}
+--private-subnet-id<subnetid,...>                # Specify the private subnet ID for created VM, default ${VPC_PRIVATE_SUBNET_ID}
+--private-sg-id=<sg-id>                          # Specify the private security group ID for VM, default ${VPC_PRIVATE_SECURITY_GROUPID}
 
 ### Flags to set the template vm
 
---target-image=<value>                           # Override the prefix template VM image used for created VM, default ${ROOT_IMG_NAME}
+--target-image=<value>                           # Override the template VM image used for created VM, default ${TARGET_IMAGE}
 --seed-image=<value>                             # Override the seed image name used to create template, default ${SEED_IMAGE}
 --seed-user=<value>                              # Override the seed user in template, default ${SEED_USER}
---arch | -a=<value>                              # Specify the architecture of VM (amd64|arm64), default ${SEED_ARCH}
+--arch=<value>                                   # Specify the architecture of VM (amd64|arm64), default ${SEED_ARCH}
 
 ### Flags for autoscaler
-
+--cloudprovider=<value>                          # autoscaler flag <grpc|externalgrpc>, default: $GRPC_PROVIDER
 --max-nodes-total=<value>                        # autoscaler flag, default: ${MAXTOTALNODES}
 --cores-total=<value>                            # autoscaler flag, default: ${CORESTOTAL}
 --memory-total=<value>                           # autoscaler flag, default: ${MEMORYTOTAL}
@@ -235,7 +244,7 @@ Options are:
 EOF
 }
 
-TEMP=$(getopt -o xvhrceuwa::p:r:k:n:p:s:t: --long create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
+TEMP=$(getopt -o hvxr --long cloudprovider:,use-zerossl,zerossl-eab-kid:,zerossl-eab-hmac-secret:,godaddy-key:,godaddy-secret:,route53-profile:,route53-zone-id:,cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -258,13 +267,90 @@ while true; do
         RESUME=YES
         shift 1
         ;;
+    --delete)
+        DELETE_CLUSTER=YES
+        shift 1
+        ;;
     --create-image-only)
         CREATE_IMAGE_ONLY=YES
         shift 1
         ;;
-    --no-cloud-provider)
-        CLOUD_PROVIDER=""
+    --cloud-provider)
+        CLOUD_PROVIDER=$2
+        shift 2
+        ;;
+    --create-nginx-apigateway)
+        USE_NGINX_GATEWAY=YES
         shift 1
+        ;;
+    --dont-create-nginx-apigateway)
+        USE_NGINX_GATEWAY=NO
+        shift 1
+        ;;
+    --prefer-ssh-publicip)
+        PREFER_SSH_PUBLICIP=YES;
+        shift 1
+        ;;
+    --dont-prefer-ssh-publicip)
+        PREFER_SSH_PUBLICIP=NO;
+        shift 1
+        ;;
+    --configuration-location)
+        CONFIGURATION_LOCATION=$2
+        mkdir -p ${CONFIGURATION_LOCATION}
+        if [ ! -d ${CONFIGURATION_LOCATION} ]; then
+            echo_red "kubernetes output : ${CONFIGURATION_LOCATION} not found"
+            exit 1
+        fi
+        shift 2
+        ;;
+    --ssl-location)
+        SSL_LOCATION=$2
+        if [ ! -d ${SSL_LOCATION} ]; then
+            echo_red "etc dir: ${SSL_LOCATION} not found"
+            exit 1
+        fi
+        shift 2
+        ;;
+    --cert-email)
+        CERT_EMAIL=$2
+        shift 2
+        ;;
+    --use-zerossl)
+        USE_ZEROSSL=YES
+        shift 1
+        ;;
+    --dont-use-zerossl)
+        USE_ZEROSSL=NO
+        shift 1
+        ;;
+    --zerossl-eab-kid)
+        ZEROSSL_EAB_KID=$2
+        shift 2
+        ;;
+    --zerossl-eab-hmac-secret)
+        ZEROSSL_EAB_HMAC_SECRET=$2
+        shift 2
+        ;;
+    --dashboard-hostname)
+        DASHBOARD_HOSTNAME=$2
+        shift 2
+        ;;
+    --public-domain)
+        PUBLIC_DOMAIN_NAME=$2
+        shift 2
+        ;;
+    --private-domain)
+        PRIVATE_DOMAIN_NAME=$2
+        shift 2
+        ;;
+    --godaddy-key)
+        GODADDY_API_KEY=$2
+        shift 2
+        ;;
+    --godaddy-secret)
+        GODADDY_API_SECRET=$2
+        shift 2
         ;;
     --aws-defs)
         AWSDEFS=$2
@@ -276,17 +362,25 @@ while true; do
         fi
         shift 2
         ;;
-    -c|--ha-cluster)
+    --cache)
+        CACHE=$2
+        shift 2
+        ;;
+    --ha-cluster)
         HA_CLUSTER=true
         CONTROLNODES=3
         shift 1
         ;;
-    -e|--create-external-etcd)
+    --create-external-etcd)
         EXTERNAL_ETCD=true
         shift 1
         ;;
-    -u|--use-nlb)
+    --use-nlb)
         USE_NLB=YES
+        shift 1
+        ;;
+    --dont-use-nlb)
+        USE_NLB=NO
         shift 1
         ;;
     --worker-nodes)
@@ -343,12 +437,22 @@ while true; do
         esac
         shift 2;;
 
-    -p|--profile)
+    --profile)
         AWS_PROFILE="$2"
         shift 2
         ;;
-    -r|--region)
+    --region)
         AWS_REGION="$2"
+        shift 2
+        ;;
+
+    --route53-profile)
+        AWS_PROFILE_ROUTE53=$2
+        shift 2
+        ;;
+
+    --route53-zone-id)
+        AWS_ROUTE53_ZONE_ID=$2
         shift 2
         ;;
 
@@ -364,11 +468,11 @@ while true; do
         ;;
 
     --target-image)
-        ROOT_IMG_NAME="$2"
+        TARGET_IMAGE="$2"
         shift 2
         ;;
 
-    -a|--arch)
+    --arch)
         SEED_ARCH=$2
         shift 2
         ;;
@@ -403,15 +507,23 @@ while true; do
         shift 2
         ;;
 
-    -d | --default-machine)
-        OVERRIDE_DEFAULT_MACHINE="$2"
+    --control-plane-machine)
+        OVERRIDE_CONTROL_PLANE_MACHINE="$2"
+        shift 2
+        ;;
+    --worker-node-machine)
+        OVERRIDE_WORKER_NODE_MACHINE="$2"
+        shift 2
+        ;;
+    --autoscale-machine)
+        OVERRIDE_AUTOSCALE_MACHINE="$2"
         shift 2
         ;;
     --nginx-machine)
         OVERRIDE_NGINX_MACHINE="$2"
         shift 2
         ;;
-    -s | --ssh-private-key)
+    --ssh-private-key)
         SSH_PRIVATE_KEY=$2
         shift 2
         ;;
@@ -423,16 +535,20 @@ while true; do
         CNI_PLUGIN="$2"
         shift 2
         ;;
-    -t | --transport)
+    --transport)
         TRANSPORT="$2"
         shift 2
         ;;
-    -k | --kubernetes-version)
+    --kubernetes-version)
         KUBERNETES_VERSION="$2"
         shift 2
         ;;
 
     # Same argument as cluster-autoscaler
+    --cloudprovider)
+        GRPC_PROVIDER="$2"
+        shift 2
+        ;;
     --max-nodes-total)
         MAXTOTALNODES="$2"
         shift 2
@@ -488,47 +604,127 @@ while true; do
     esac
 done
 
-pushd ${CURDIR}/../
+if [ "${GRPC_PROVIDER}" != "grpc" ] && [ "${GRPC_PROVIDER}" != "externalgrpc" ]; then
+    echo_red_bold "Unsupported cloud provider: ${GRPC_PROVIDER}, only grpc|externalgrpc, exit"
+    exit
+fi
 
-if [ "${SEED_ARCH}" == "amd64" ]; then
+case "--${CLOUD_PROVIDER}" in
+    --aws|--external)
+        ;;
+    --|--none)
+        CLOUD_PROVIDER=""
+        ;;
+    *)
+        echo_red "Unknown cloud-provider: ${CLOUD_PROVIDER}, only supported: aws|kubernetes|none"
+        ;;
+esac
+
+if [ "${USE_ZEROSSL}" = "YES" ]; then
+    if [ -z "${ZEROSSL_EAB_KID}" ] || [ -z "${ZEROSSL_EAB_HMAC_SECRET}" ]; then
+        echo_red_bold "ZEROSSL_EAB_KID or ZEROSSL_EAB_HMAC_SECRET is empty, exit"
+        exit 1
+    fi
+fi
+
+if [ ${HA_CLUSTER} = "false" ]; then
+    if [ "${USE_NLB}" = "YES" ]; then
+        echo_red_bold "NLB usage is not available for single plane cluster"
+        exit 1
+    fi
+
+    if [ "${USE_NGINX_GATEWAY}" = "NO" ] && [ "${CONTROLPLANE_USE_PUBLICIP}" = "false" ] && [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ]; then
+        echo_red_bold "Single plane cluster can not be exposed to internet because because control plane require public IP or require NGINX gateway in front"
+        exit
+    fi
+fi
+
+if [ "${CONTROLPLANE_USE_PUBLICIP}" = "true" ]; then
+    PREFER_SSH_PUBLICIP=NO
+
+    if [ "${USE_NGINX_GATEWAY}" = "YES" ] || [ "${USE_NLB}" = "YES" ] || [ "${EXPOSE_PUBLIC_CLUSTER}" = "false" ]; then
+        echo_red_bold "Control plane can not have public IP because nginx gatewaway or NLB is required or cluster must not be exposed to internet"
+        exit 1
+    fi
+
+    if [ "${WORKERNODE_USE_PUBLICIP}" = "true" ]; then
+        echo_red_bold "Worker node can not have a public IP when control plane does not have public IP"
+        exit 1
+    fi
+
+fi
+
+export TARGET_CONFIG_LOCATION=${CONFIGURATION_LOCATION}/config/${NODEGROUP_NAME}/config
+export TARGET_DEPLOY_LOCATION=${CONFIGURATION_LOCATION}/config/${NODEGROUP_NAME}/deployment
+export TARGET_CLUSTER_LOCATION=${CONFIGURATION_LOCATION}/cluster/${NODEGROUP_NAME}
+
+[ -z "${AWS_PROFILE_ROUTE53}" ] && AWS_PROFILE_ROUTE53=${AWS_PROFILE}
+[ -z "${AWS_ROUTE53_ACCESSKEY}" ] && AWS_ROUTE53_ACCESSKEY=${AWS_ACCESSKEY}
+[ -z "${AWS_ROUTE53_SECRETKEY}" ] && AWS_ROUTE53_SECRETKEY=${AWS_SECRETKEY}
+[ -z "${AWS_ROUTE53_TOKEN}" ] && AWS_ROUTE53_TOKEN=${AWS_TOKEN}
+
+if [ "${SEED_ARCH}" = "amd64" ]; then
     if [ -z "${OVERRIDE_SEED_IMAGE}" ]; then
         SEED_IMAGE=${SEED_IMAGE_AMD64}
     else
         SEED_IMAGE="${OVERRIDE_SEED_IMAGE}"
     fi
 
-    if [ -z "${OVERRIDE_DEFAULT_MACHINE}" ]; then
-        DEFAULT_MACHINE="t3a.medium"
-    else
-        DEFAULT_MACHINE="${OVERRIDE_DEFAULT_MACHINE}"
+    if [ ! -z "${OVERRIDE_CONTROL_PLANE_MACHINE}" ]; then
+        CONTROL_PLANE_MACHINE="${OVERRIDE_CONTROL_PLANE_MACHINE}"
     fi
 
-    if [ -z "${OVERRIDE_NGINX_MACHINE}" ]; then
-        NGINX_MACHINE="t3a.small"
-    else
+    if [ ! -z "${OVERRIDE_WORKER_NODE_MACHINE}" ]; then
+        WORKER_NODE_MACHINE="${OVERRIDE_WORKER_NODE_MACHINE}"
+    fi
+
+    if [ ! -z "${OVERRIDE_AUTOSCALE_MACHINE}" ]; then
+        AUTOSCALE_MACHINE="${OVERRIDE_AUTOSCALE_MACHINE}"
+    fi
+
+    if [ ! -z "${OVERRIDE_NGINX_MACHINE}" ]; then
         NGINX_MACHINE="${OVERRIDE_NGINX_MACHINE}"
     fi
-elif [ "${SEED_ARCH}" == "arm64" ]; then
+elif [ "${SEED_ARCH}" = "arm64" ]; then
     if [ -z "${OVERRIDE_SEED_IMAGE}" ]; then
         SEED_IMAGE=${SEED_IMAGE_ARM64}
     else
         SEED_IMAGE="${OVERRIDE_SEED_IMAGE}"
     fi
 
-    if [ -z "${OVERRIDE_DEFAULT_MACHINE}" ]; then
-        DEFAULT_MACHINE="t4g.medium"
-    else
-        DEFAULT_MACHINE="${OVERRIDE_DEFAULT_MACHINE}"
+    if [ ! -z "${OVERRIDE_CONTROL_PLANE_MACHINE}" ]; then
+        CONTROL_PLANE_MACHINE="${OVERRIDE_CONTROL_PLANE_MACHINE}"
     fi
 
-    if [ -z "${OVERRIDE_NGINX_MACHINE}" ]; then
-        NGINX_MACHINE="t4g.small"
-    else
+    if [ ! -z "${OVERRIDE_WORKER_NODE_MACHINE}" ]; then
+        WORKER_NODE_MACHINE="${OVERRIDE_WORKER_NODE_MACHINE}"
+    fi
+
+    if [ ! -z "${OVERRIDE_AUTOSCALE_MACHINE}" ]; then
+        AUTOSCALE_MACHINE="${OVERRIDE_AUTOSCALE_MACHINE}"
+    fi
+
+    if [ ! -z "${OVERRIDE_AUTOSCALE_MACHINE}" ]; then
+        AUTOSCALE_MACHINE="${OVERRIDE_AUTOSCALE_MACHINE}"
+    fi
+
+    if [ ! -z "${OVERRIDE_NGINX_MACHINE}" ]; then
         NGINX_MACHINE="${OVERRIDE_NGINX_MACHINE}"
     fi
 else
     echo_red "Unsupported architecture: ${SEED_ARCH}"
     exit -1
+fi
+
+if [ -z ${TARGET_IMAGE} ]; then
+    ROOT_IMG_NAME=$(aws ec2 describe-images --image-ids ${SEED_IMAGE} | jq -r '.Images[0].Name//""' | sed -E 's/.+ubuntu-(\w+)-.+/\1-k8s/')
+
+    if [ "${ROOT_IMG_NAME}" = "-k8s" ]; then
+        echo_red_bold "AMI: ${SEED_IMAGE} not found or not ubuntu, exit"
+        exit
+    fi
+
+    TARGET_IMAGE="${ROOT_IMG_NAME}-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${CONTAINER_ENGINE}-${SEED_ARCH}"
 fi
 
 MACHINES_TYPES=$(jq --argjson VOLUME_SIZE ${VOLUME_SIZE} --arg VOLUME_TYPE ${VOLUME_TYPE} 'with_entries(.value += {"diskType": $VOLUME_TYPE, "diskSize": $VOLUME_SIZE})' templates/machines/${SEED_ARCH}.json)
@@ -537,7 +733,10 @@ export SSH_KEY_FNAME="$(basename ${SSH_PRIVATE_KEY})"
 export SSH_PUBLIC_KEY="${SSH_PRIVATE_KEY}.pub"
 
 # Check if we can resume the creation process
-if [ ! -f ./config/${NODEGROUP_NAME}/buildenv ] && [ "${RESUME}" = "YES" ]; then
+if [ "${DELETE_CLUSTER}" = "YES" ]; then
+    delete-masterkube.sh --configuration-location=${CONFIGURATION_LOCATION} --aws-defs=${AWSDEFS} --node-group=${NODEGROUP_NAME}
+    exit
+elif [ ! -f ${TARGET_CONFIG_LOCATION}/buildenv ] && [ "${RESUME}" = "YES" ]; then
     echo_red "Unable to resume, building env is not found"
     exit -1
 fi
@@ -558,10 +757,10 @@ export SSH_KEY=$(cat "${SSH_PUBLIC_KEY}")
 
 # If we use AWS CNI, install eni-max-pods.txt definition file
 if [ ${CNI_PLUGIN} = "aws" ]; then
-    MAX_PODS=$(curl -s "https://raw.githubusercontent.com/awslabs/amazon-eks-ami/master/files/eni-max-pods.txt" | grep ^${DEFAULT_MACHINE} | awk '{print $2}')
+    MAX_PODS=$(curl -s "https://raw.githubusercontent.com/awslabs/amazon-eks-ami/master/files/eni-max-pods.txt" | grep ^${AUTOSCALE_MACHINE} | awk '{print $2}')
 
     if [ -z "${MAX_PODS}" ]; then
-        echo_red "No entry for ${DEFAULT_MACHINE} in eni-max-pods.txt. Not setting ${MAX_PODS} max pods for kubelet"
+        echo_red "No entry for ${AUTOSCALE_MACHINE} in eni-max-pods.txt. Not setting ${MAX_PODS} max pods for kubelet"
     fi
 fi
 
@@ -595,8 +794,37 @@ if [ -z ${WORKER_INSTANCE_PROFILE_ARN} ]; then
     fi
 fi
 
+# Grab domain name from route53
+if [ ! -z "${AWS_ROUTE53_ZONE_ID}" ]; then
+    ROUTE53_ZONE_NAME=$(aws route53 get-hosted-zone --id  ${AWS_ROUTE53_ZONE_ID} --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} 2>/dev/null| jq -r '.HostedZone.Name // ""')
+
+    if [ -z "${ROUTE53_ZONE_NAME}" ]; then
+        echo_red_bold "The zone: ${AWS_ROUTE53_ZONE_ID} does not exist, exit"
+        exit 1
+    fi
+
+    ROUTE53_ZONE_NAME=${ROUTE53_ZONE_NAME%?}
+fi
+
+# Grab private domain name
+if [ -z "${PRIVATE_DOMAIN_NAME}" ]; then
+    if [ -z "${ROUTE53_ZONE_NAME}" ] && [ -z "${PUBLIC_DOMAIN_NAME}" ]; then
+        echo_red_bold "PRIVATE_DOMAIN_NAME is not defined, exit"
+        exit 1
+    fi
+
+    if [ ! -z "${ROUTE53_ZONE_NAME}" ]; then
+        echo_blue_bold "PRIVATE_DOMAIN_NAME will be set to ${ROUTE53_ZONE_NAME}"
+        PRIVATE_DOMAIN_NAME=${ROUTE53_ZONE_NAME}
+    else
+        echo_blue_bold "PRIVATE_DOMAIN_NAME will be set to ${PUBLIC_DOMAIN_NAME}"
+        PRIVATE_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME}
+    fi
+fi
+
 # Tag VPC & Subnet
-IFS=, read -a VPC_PUBLIC_SUBNET_IDS <<<${VPC_PUBLIC_SUBNET_ID}
+IFS=, read -a VPC_PUBLIC_SUBNET_IDS <<< "${VPC_PUBLIC_SUBNET_ID}"
+
 for SUBNET in ${VPC_PUBLIC_SUBNET_IDS[*]}
 do
     TAGGED=$(aws ec2 describe-subnets --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters "Name=subnet-id,Values=${SUBNET}" | jq -r ".Subnets[].Tags[]|select(.Key == \"kubernetes.io/cluster/${NODEGROUP_NAME}\")|.Value")
@@ -618,7 +846,7 @@ elif [ ${#VPC_PUBLIC_SUBNET_IDS[@]} = 2 ]; then
 fi
 
 # Tag VPC & Subnet
-IFS=, read -a VPC_PRIVATE_SUBNET_IDS <<<${VPC_PRIVATE_SUBNET_ID}
+IFS=, read -a VPC_PRIVATE_SUBNET_IDS <<< "${VPC_PRIVATE_SUBNET_ID}"
 
 for SUBNET in ${VPC_PRIVATE_SUBNET_IDS[*]}
 do
@@ -643,7 +871,6 @@ elif [ ${#VPC_PRIVATE_SUBNET_IDS[@]} = 2 ]; then
     VPC_PRIVATE_SUBNET_IDS+=(${VPC_PRIVATE_SUBNET_IDS[1]})
 fi
 
-TARGET_IMAGE="${ROOT_IMG_NAME}-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${CONTAINER_ENGINE}-${SEED_ARCH}"
 KEYEXISTS=$(aws ec2 describe-key-pairs --profile ${AWS_PROFILE} --region ${AWS_REGION} --key-names "${SSH_KEYNAME}" | jq -r '.KeyPairs[].KeyName // ""')
 ECR_PASSWORD=$(aws ecr get-login-password  --profile ${AWS_PROFILE} --region us-west-2)
 
@@ -658,11 +885,11 @@ fi
 if [ "${LAUNCH_CA}" != "YES" ]; then
     SSH_PRIVATE_KEY_LOCAL="${SSH_PRIVATE_KEY}"
 
-    if [ "${TRANSPORT}" == "unix" ]; then
+    if [ "${TRANSPORT}" = "unix" ]; then
         LISTEN="/var/run/cluster-autoscaler/aws.sock"
         CONNECTTO="unix:/var/run/cluster-autoscaler/aws.sock"
-    elif [ "${TRANSPORT}" == "tcp" ]; then
-        if [ "${OSDISTRO}" == "Linux" ]; then
+    elif [ "${TRANSPORT}" = "tcp" ]; then
+        if [ "${OSDISTRO}" = "Linux" ]; then
             NET_IF=$(ip route get 1 | awk '{print $5;exit}')
             IPADDR=$(ip addr show ${NET_IF} | grep -m 1 "inet\s" | tr '/' ' ' | awk '{print $2}')
         else
@@ -677,7 +904,7 @@ if [ "${LAUNCH_CA}" != "YES" ]; then
         exit -1
     fi
 else
-    SSH_PRIVATE_KEY_LOCAL="/root/.ssh/id_rsa"
+    SSH_PRIVATE_KEY_LOCAL="/etc/ssh/id_rsa"
     TRANSPORT=unix
     LISTEN="/var/run/cluster-autoscaler/aws.sock"
     CONNECTTO="unix:/var/run/cluster-autoscaler/aws.sock"
@@ -685,42 +912,64 @@ fi
 
 echo_blue_bold "Transport set to:${TRANSPORT}, listen endpoint at ${LISTEN}"
 
-export PATH=./bin:${PATH}
-
 # If CERT doesn't exist, create one autosigned
-if [ ! -f ./etc/ssl/privkey.pem ]; then
-    mkdir -p ./etc/ssl/
-    openssl genrsa 2048 >./etc/ssl/privkey.pem
-    openssl req -new -x509 -nodes -sha1 -days 3650 -key ./etc/ssl/privkey.pem >./etc/ssl/cert.pem
-    cat ./etc/ssl/cert.pem ./etc/ssl/privkey.pem >./etc/ssl/fullchain.pem
-    chmod 644 ./etc/ssl/*
+if [ ! -f ${SSL_LOCATION}/privkey.pem ]; then
+    if [ -z "${PUBLIC_DOMAIN_NAME}" ]; then
+        ACM_DOMAIN_NAME=${PRIVATE_DOMAIN_NAME}
+    else
+        ACM_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME}
+    fi
+
+    echo_blue_bold "Create autosigned certificat for domain: ${ACM_DOMAIN_NAME}"
+    ${CURDIR}/create-cert.sh --domain ${ACM_DOMAIN_NAME} --ssl-location ${SSL_LOCATION} --cert-email ${CERT_EMAIL}
+fi
+
+if [ ! -f ${SSL_LOCATION}/cert.pem ]; then
+    echo_red "${SSL_LOCATION}/cert.pem not found, exit"
+    exit 1
+fi
+
+if [ ! -f ${SSL_LOCATION}/fullchain.pem ]; then
+    echo_red "${SSL_LOCATION}/fullchain.pem not found, exit"
+    exit 1
 fi
 
 export TARGET_IMAGE_AMI=$(aws ec2 describe-images --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters "Name=name,Values=${TARGET_IMAGE}" | jq -r '.Images[0].ImageId // ""')
 
 # Extract the domain name from CERT
-export DOMAIN_NAME=$(openssl x509 -noout -subject -in ./etc/ssl/cert.pem | awk -F= '{print $NF}' | sed -e 's/^[ \t]*//' | sed 's/\*\.//g')
+export ACM_DOMAIN_NAME=$(openssl x509 -noout -subject -in ${SSL_LOCATION}/cert.pem -nameopt sep_multiline | grep 'CN=' | awk -F= '{print $2}' | sed -e 's/^[\s\t]*//')
 
-export ACM_CERTIFICATE_ARN=$(aws acm list-certificates --profile ${AWS_PROFILE} --region ${AWS_REGION} | jq -r --arg DOMAIN_NAME ${DOMAIN_NAME} '.CertificateSummaryList[]|select(.DomainName == $DOMAIN_NAME)|.CertificateArn // ""')
+# Drop wildcard
+export DOMAIN_NAME=$(echo -n $ACM_DOMAIN_NAME | sed 's/\*\.//g')
+export CERT_DOMAIN=${DOMAIN_NAME}
+
+if [ "${DOMAIN_NAME}" != "${PRIVATE_DOMAIN_NAME}" ] && [ "${DOMAIN_NAME}" != "${PUBLIC_DOMAIN_NAME}" ]; then
+    echo_red "Warning: The provided domain ${CERT_DOMAIN} from certificat does not target domain ${PRIVATE_DOMAIN_NAME} or ${PUBLIC_DOMAIN_NAME}"
+
+    if [ -z "${PUBLIC_DOMAIN_NAME}" ]; then
+        DOMAIN_NAME=${PRIVATE_DOMAIN_NAME}
+    else
+        DOMAIN_NAME=${PUBLIC_DOMAIN_NAME}
+    fi
+fi
+
+# ACM Keep the wildcard
+export ACM_CERTIFICATE_ARN=$(aws acm list-certificates --profile ${AWS_PROFILE} --region ${AWS_REGION} \
+    | jq -r --arg DOMAIN_NAME "${ACM_DOMAIN_NAME}" '.CertificateSummaryList[]|select(.DomainName == $DOMAIN_NAME)|.CertificateArn // ""')
 
 if [ "x${ACM_CERTIFICATE_ARN}" = "x" ]; then
-    aws acm import-certificate --profile ${AWS_PROFILE} --region ${AWS_REGION} --tags "Key=Name,Value=${MASTERKUBE}.${DOMAIN_NAME}" \
-        --certificate fileb://etc/ssl/cert.pem --certificate-chain fileb://etc/ssl/chain.pem --private-key fileb://etc/ssl/privkey.pem
-    export ACM_CERTIFICATE_ARN=$(aws acm list-certificates --profile ${AWS_PROFILE} --region ${AWS_REGION} \
-        | jq --arg DOMAIN_NAME ${DOMAIN_NAME} '.CertificateSummaryList[]|select(.DomainName == $DOMAIN_NAME)|.CertificateArn' | tr -d '"' | sed -e 's/null//g')
-fi               
+    ACM_CERTIFICATE_ARN=$(aws acm import-certificate --profile ${AWS_PROFILE} --region ${AWS_REGION} --tags "Key=Name,Value=${CERT_DOMAIN}" \
+        --certificate fileb://${SSL_LOCATION}/cert.pem --private-key fileb://${SSL_LOCATION}/privkey.pem | jq -r '.CertificateArn // ""')
+fi
 
-# Grab private domain name
-if [ ! -z ${ROUTE53_ZONEID} ]; then
-    PRIVATE_DOMAIN_NAME=$(aws route53 get-hosted-zone --id  ${ROUTE53_ZONEID} --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} | jq -r '.HostedZone.Name // ""')
-    PRIVATE_DOMAIN_NAME=${PRIVATE_DOMAIN_NAME::-1}
-else
-    PRIVATE_DOMAIN_NAME=${DOMAIN_NAME}
+if [ -z "${ACM_CERTIFICATE_ARN}" ]; then
+    echo_red "ACM_CERTIFICATE_ARN is empty after creation, something goes wrong"
+    exit 1
 fi
 
 # If the VM template doesn't exists, build it from scrash
 if [ -z "${TARGET_IMAGE_AMI}" ]; then
-    echo_blue_dot_title "Create aws preconfigured image ${TARGET_IMAGE}"
+    echo_blue_bold "Create aws preconfigured image ${TARGET_IMAGE}"
 
     if [ ${CONTROLPLANE_USE_PUBLICIP} == "true" ]; then
         SUBNETID=${VPC_PUBLIC_SUBNET_IDS[0]}
@@ -739,6 +988,7 @@ if [ -z "${TARGET_IMAGE_AMI}" ]; then
         --custom-image="${TARGET_IMAGE}" \
         --kubernetes-version="${KUBERNETES_VERSION}" \
         --container-runtime=${CONTAINER_ENGINE} \
+        --cache=${CACHE} \
         --arch="${SEED_ARCH}" \
         --ami="${SEED_IMAGE}" \
         --user="${SEED_USER}" \
@@ -749,39 +999,63 @@ if [ -z "${TARGET_IMAGE_AMI}" ]; then
 fi
 
 if [ "${CREATE_IMAGE_ONLY}" = "YES" ]; then
+    echo_blue_bold "Create image only, done..."
     exit 0
 fi
 
-# Delete previous exixting version
+# Delete previous existing version
 if [ "${RESUME}" = "NO" ]; then
     echo_title "Launch custom ${MASTERKUBE} instance with ${TARGET_IMAGE}" > /dev/stderr
-    delete-masterkube.sh
+    delete-masterkube.sh --configuration-location=${CONFIGURATION_LOCATION} --aws-defs=${AWSDEFS} --node-group=${NODEGROUP_NAME}
 else
     echo_title "Resume custom ${MASTERKUBE} instance with ${TARGET_IMAGE}" > /dev/stderr
 fi
 
+mkdir -p ${TARGET_CONFIG_LOCATION}
+mkdir -p ${TARGET_DEPLOY_LOCATION}
+mkdir -p ${TARGET_CLUSTER_LOCATION}
+
 export TARGET_IMAGE_AMI=$(aws ec2 describe-images --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters "Name=name,Values=${TARGET_IMAGE}" | jq -r '.Images[0].ImageId // ""')
 
-if [ -d ${TARGET_IMAGE_AMI} ]; then
+if [ -z "${TARGET_IMAGE_AMI}" ]; then
     echo_red "AMI ${TARGET_IMAGE} not found"
     exit -1
 fi
 
-mkdir -p ./config/${NODEGROUP_NAME}/
-mkdir -p ./cluster/${NODEGROUP_NAME}/
-
 if [ "${RESUME}" = "NO" ]; then
-    cat ${AWSDEFS} > ./config/${NODEGROUP_NAME}/buildenv
+    if [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
+        export AWS_ROUTE53_PUBLIC_ZONE_ID=$(aws route53 list-hosted-zones-by-name --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --dns-name ${PUBLIC_DOMAIN_NAME} | jq --arg DNSNAME "${PUBLIC_DOMAIN_NAME}." -r '.HostedZones[]|select(.Name == $DNSNAME)|.Id//""' | sed -E 's/\/hostedzone\/(\w+)/\1/')
+        if [ -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
+            echo_red_bold "No Route53 for PUBLIC_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME}"
+        else
+            echo_blue_bold "Found PUBLIC_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME} AWS_ROUTE53_PUBLIC_ZONE_ID=$AWS_ROUTE53_PUBLIC_ZONE_ID"
+            echo_red_bold "Route53 will be used to register public domain hosts"
+            # Disable GoDaddy registration
+            GODADDY_API_KEY=
+            GODADDY_API_SECRET=
+        fi
+    fi
 
-    ${SED} -i -e '/MASTER_INSTANCE_PROFILE_ARN/d' -e '/WORKER_INSTANCE_PROFILE_ARN/d' ./config/${NODEGROUP_NAME}/buildenv
+    cat ${AWSDEFS} > ${TARGET_CONFIG_LOCATION}/buildenv
 
-    cat >> ./config/${NODEGROUP_NAME}/buildenv <<EOF
+    sed -i -e '/MASTER_INSTANCE_PROFILE_ARN/d' -e '/WORKER_INSTANCE_PROFILE_ARN/d' ${TARGET_CONFIG_LOCATION}/buildenv
+
+    cat >> ${TARGET_CONFIG_LOCATION}/buildenv <<EOF
+### Env to build cluster
+export TARGET_CONFIG_LOCATION=${TARGET_CONFIG_LOCATION}
+export TARGET_DEPLOY_LOCATION=${TARGET_DEPLOY_LOCATION}
+export TARGET_CLUSTER_LOCATION=${TARGET_CLUSTER_LOCATION}
+export USE_NGINX_GATEWAY=${USE_NGINX_GATEWAY}
+export PREFER_SSH_PUBLICIP=${PREFER_SSH_PUBLICIP}
 export CLOUD_PROVIDER=${CLOUD_PROVIDER}
 export CNI_PLUGIN_VERSION=${CNI_PLUGIN_VERSION}
 export CNI_PLUGIN=${CNI_PLUGIN}
 export CONTROLNODES=${CONTROLNODES}
 export CORESTOTAL="${CORESTOTAL}"
-export DEFAULT_MACHINE=${DEFAULT_MACHINE}
+export AUTOSCALE_MACHINE=${AUTOSCALE_MACHINE}
+export CONTROL_PLANE_MACHINE=${CONTROL_PLANE_MACHINE}
+export WORKER_NODE_MACHINE=${WORKER_NODE_MACHINE}
+export NGINX_MACHINE=${NGINX_MACHINE}
 export EXTERNAL_ETCD=${EXTERNAL_ETCD}
 export FIRSTNODE_INDEX=${FIRSTNODE_INDEX}
 export HA_CLUSTER=${HA_CLUSTER}
@@ -789,6 +1063,7 @@ export KUBECONFIG=${KUBECONFIG}
 export KUBERNETES_VERSION=${KUBERNETES_VERSION}
 export MASTER_PROFILE_NAME=${MASTER_PROFILE_NAME}
 export MASTERKUBE=${MASTERKUBE}
+export DASHBOARD_HOSTNAME=${DASHBOARD_HOSTNAME}
 export MAX_PODS=${MAX_PODS}
 export MAXAUTOPROVISIONNEDNODEGROUPCOUNT=${MAXAUTOPROVISIONNEDNODEGROUPCOUNT}
 export MAXNODES=${MAXNODES}
@@ -797,9 +1072,10 @@ export MEMORYTOTAL="${MEMORYTOTAL}"
 export MINNODES=${MINNODES}
 export NODEGROUP_NAME=${NODEGROUP_NAME}
 export OSDISTRO=${OSDISTRO}
+export PUBLIC_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME}
 export PRIVATE_DOMAIN_NAME=${PRIVATE_DOMAIN_NAME}
+export CERT_DOMAIN=${CERT_DOMAIN}
 export REGISTRY=${REGISTRY}
-export ROOT_IMG_NAME=${ROOT_IMG_NAME}
 export SCALEDOWNDELAYAFTERADD=${SCALEDOWNDELAYAFTERADD}
 export SCALEDOWNDELAYAFTERDELETE=${SCALEDOWNDELAYAFTERDELETE}
 export SCALEDOWNDELAYAFTERFAILURE=${SCALEDOWNDELAYAFTERFAILURE}
@@ -828,10 +1104,19 @@ export WORKER_PROFILE_NAME=${WORKER_PROFILE_NAME}
 export WORKERNODES=${WORKERNODES}
 export MASTER_INSTANCE_PROFILE_ARN=${MASTER_INSTANCE_PROFILE_ARN}
 export WORKER_INSTANCE_PROFILE_ARN=${WORKER_INSTANCE_PROFILE_ARN}
+export AWS_ROUTE53_PUBLIC_ZONE_ID=${AWS_ROUTE53_PUBLIC_ZONE_ID}
+export USE_ZEROSSL=${USE_ZEROSSL}
+export ZEROSSL_EAB_KID=${ZEROSSL_EAB_KID}
+export ZEROSSL_EAB_HMAC_SECRET=${ZEROSSL_EAB_HMAC_SECRET}
+export GODADDY_API_KEY=${GODADDY_API_KEY}
+export GODADDY_API_SECRET=${GODADDY_API_SECRET}
+export GRPC_PROVIDER=${GRPC_PROVIDER}
 EOF
 else
-    source ./config/${NODEGROUP_NAME}/buildenv
+    source ${TARGET_CONFIG_LOCATION}/buildenv
 fi
+
+sed -i '/NODE_INDEX/d' ${TARGET_CONFIG_LOCATION}/buildenv
 
 if [ ${WORKERNODES} -eq 0 ]; then
     MASTER_NODE_ALLOW_DEPLOYMENT=YES
@@ -840,10 +1125,18 @@ else
 fi
 
 if [ ${HA_CLUSTER} = "true" ]; then
-    if [ "${USE_NLB}" == "YES" ]; then
+    if [ "${USE_NLB}" = "YES" ]; then
         FIRSTNODE_INDEX=1
-        CONTROLNODE_INDEX=1
-        LASTNODE_INDEX=$((WORKERNODES + ${CONTROLNODES}))
+        if [ "${USE_NGINX_GATEWAY}" = "YES" ]; then
+            CONTROLNODE_INDEX=$((FIRSTNODE_INDEX + ${#VPC_PUBLIC_SUBNET_IDS[*]}))
+            LASTNODE_INDEX=$((WORKERNODES + ${CONTROLNODES} + ${#VPC_PUBLIC_SUBNET_IDS[*]}))
+        else
+            CONTROLNODE_INDEX=1
+            LASTNODE_INDEX=$((WORKERNODES + ${CONTROLNODES}))
+        fi
+    elif [ "${CONTROLPLANE_USE_PUBLICIP}" = "true" ]; then
+        CONTROLNODE_INDEX=0
+        LASTNODE_INDEX=$((WORKERNODES + ${CONTROLNODES} -1))
     else
         CONTROLNODE_INDEX=${#VPC_PUBLIC_SUBNET_IDS[*]}
         LASTNODE_INDEX=$((WORKERNODES + ${CONTROLNODES} + ${#VPC_PUBLIC_SUBNET_IDS[*]} - 1))
@@ -855,7 +1148,7 @@ else
     EXTERNAL_ETCD=false
 
     if [ "${EXPOSE_PUBLIC_CLUSTER}" != "${CONTROLPLANE_USE_PUBLICIP}" ]; then
-        if [ "${EXPOSE_PUBLIC_CLUSTER}" == "true" ]; then
+        if [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ]; then
 
             if [ ${USE_NLB} = "YES" ]; then
                 FIRSTNODE_INDEX=1
@@ -869,6 +1162,14 @@ fi
 
 WORKERNODE_INDEX=$((CONTROLNODE_INDEX + ${CONTROLNODES}))
 
+echo "export FIRSTNODE_INDEX=$FIRSTNODE_INDEX" >> ${TARGET_CONFIG_LOCATION}/buildenv
+echo "export LASTNODE_INDEX=$LASTNODE_INDEX" >> ${TARGET_CONFIG_LOCATION}/buildenv
+echo "export CONTROLNODE_INDEX=$CONTROLNODE_INDEX" >> ${TARGET_CONFIG_LOCATION}/buildenv
+echo "export WORKERNODE_INDEX=$WORKERNODE_INDEX" >> ${TARGET_CONFIG_LOCATION}/buildenv
+
+#===========================================================================================================================================
+#
+#===========================================================================================================================================
 function named_index_suffix() {
     local INDEX=$1
 
@@ -877,20 +1178,28 @@ function named_index_suffix() {
     echo ${SUFFIX:(-2)}
 }
 
+#===========================================================================================================================================
+#
+#===========================================================================================================================================
 function wait_nlb_ready() {
-    echo_blue_dot_title "Wait for ELB start on IP: ${CONTROL_PLANE_ENDPOINT}"
+    echo_blue_dot_title "Wait for ELB start on IP: ${CONTROL_PLANE_ENDPOINT}:6443"
 
     while :
     do
         echo_blue_dot
-        curl -s -k "https://${CONTROL_PLANE_ENDPOINT}:6443" &> /dev/null && break
+        curl -s -k --connect-timeout 1 "https://${CONTROL_PLANE_ENDPOINT}:6443" &> /dev/null && break
         sleep 1
     done
+    echo
+
     echo_line
 
-    echo -n ${CONTROL_PLANE_ENDPOINT}:6443 > ./cluster/${NODEGROUP_NAME}/manager-ip
+    echo -n ${CONTROL_PLANE_ENDPOINT}:6443 > ${TARGET_CLUSTER_LOCATION}/manager-ip
 }
 
+#===========================================================================================================================================
+#
+#===========================================================================================================================================
 function get_instance_name() {
     local INDEX=$1
     local SUFFIX=$(named_index_suffix $INDEX)
@@ -898,19 +1207,24 @@ function get_instance_name() {
     local MASTERKUBE_NODE=
 
     if [ ${HA_CLUSTER} = "true" ]; then
-        if [[ ${INDEX} < ${CONTROLNODE_INDEX} ]]; then
-            NODEINDEX=$((INDEX + 1))
-            if [[ ${CONTROLNODE_INDEX} > 1 ]]; then
+        if [ ${INDEX} -lt ${CONTROLNODE_INDEX} ]; then
+            if [ $FIRSTNODE_INDEX -eq 0 ]; then
+                NODEINDEX=$((INDEX + 1))
+            else
+                NODEINDEX=$INDEX
+            fi
+
+            if [ ${CONTROLNODE_INDEX} -gt 1 ]; then
                 MASTERKUBE_NODE="${MASTERKUBE}-$(named_index_suffix $NODEINDEX)"
             else
                 MASTERKUBE_NODE="${MASTERKUBE}"
             fi
-        elif [[ ${INDEX} -ge $((CONTROLNODE_INDEX + ${CONTROLNODES})) ]]; then
-            NODEINDEX=$((INDEX - ${CONTROLNODES} - ${CONTROLNODE_INDEX} + 1))
-            MASTERKUBE_NODE="${NODEGROUP_NAME}-worker-$(named_index_suffix $NODEINDEX)"
-        else
+        elif [ ${INDEX} -lt $((CONTROLNODE_INDEX + ${CONTROLNODES})) ]; then
             NODEINDEX=$((INDEX - ${CONTROLNODE_INDEX} + 1))
             MASTERKUBE_NODE="${NODEGROUP_NAME}-master-$(named_index_suffix $NODEINDEX)"
+        else
+            NODEINDEX=$((INDEX - ${CONTROLNODES} - ${CONTROLNODE_INDEX} + 1))
+            MASTERKUBE_NODE="${NODEGROUP_NAME}-worker-$(named_index_suffix $NODEINDEX)"
         fi
     else
         if [ ${INDEX} -lt ${CONTROLNODE_INDEX} ]; then
@@ -918,11 +1232,7 @@ function get_instance_name() {
             MASTERKUBE_NODE="${MASTERKUBE}"
         elif [ ${INDEX} -eq ${CONTROLNODE_INDEX} ]; then
             NODEINDEX=1
-            if [ ${INDEX} -eq 0 ]; then
-                MASTERKUBE_NODE="${MASTERKUBE}"
-            else
-                MASTERKUBE_NODE="${NODEGROUP_NAME}-master-01"
-            fi
+            MASTERKUBE_NODE="${NODEGROUP_NAME}-master-01"
         else
             NODEINDEX=$((INDEX - ${CONTROLNODE_INDEX}))
             MASTERKUBE_NODE="${NODEGROUP_NAME}-worker-$(named_index_suffix $NODEINDEX)"
@@ -932,29 +1242,34 @@ function get_instance_name() {
     echo -n "${NODEINDEX} ${SUFFIX} ${MASTERKUBE_NODE}"
 }
 
+#===========================================================================================================================================
+#
+#===========================================================================================================================================
 function create_vm() {
     local INDEX=$1
     local NETWORK_INTERFACE_ID=${RESERVED_ENI[$INDEX]}
-    local IPADDR=${RESERVED_IPS[$INDEX]}
+    local IPADDR=${PRIVATE_ADDR_IPS[$INDEX]}
+    local MACHINE_TYPE=${WORKER_NODE_MACHINE}
     local MASTERKUBE_NODE=
     local SUFFIX=
     local INSTANCE_ID=
     local NODEINDEX=
+    local ROUTE53_ENTRY=
 
-    read NODEINDEX SUFFIX MASTERKUBE_NODE <<<$(get_instance_name $INDEX)
+    read NODEINDEX SUFFIX MASTERKUBE_NODE <<< "$(get_instance_name ${INDEX})"
 
     LAUNCHED_INSTANCE=$(aws ec2  describe-instances --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters "Name=tag:Name,Values=${MASTERKUBE_NODE}" | jq -r '.Reservations[].Instances[]|select(.State.Code == 16)' )
 
     if [ -z $(echo ${LAUNCHED_INSTANCE} | jq '.InstanceId') ]; then
         # Cloud init user-data
-        cat > ./config/${NODEGROUP_NAME}/userdata-${SUFFIX}.yaml <<EOF
+        cat > ${TARGET_CONFIG_LOCATION}/userdata-${SUFFIX}.yaml <<EOF
 #cloud-config
 runcmd:
   - echo "Create ${MASTERKUBE_NODE}" > /var/log/masterkube.log
   - hostnamectl set-hostname "${MASTERKUBE_NODE}"
 EOF
 
-    cat > ./config/${NODEGROUP_NAME}/mapping-${SUFFIX}.json <<EOF
+    cat > ${TARGET_CONFIG_LOCATION}/mapping-${SUFFIX}.json <<EOF
     [
         {
             "DeviceName": "/dev/sda1",
@@ -971,54 +1286,63 @@ EOF
         # Worker options by default
         local IAM_PROFILE_OPTIONS="--iam-instance-profile Arn=${WORKER_INSTANCE_PROFILE_ARN}"
         local PUBLIC_IP_OPTIONS="--no-associate-public-ip-address"
-        local MACHINE_TYPE=${DEFAULT_MACHINE}
-        local SUBNET_INDEX=$(echo "$((NODEINDEX - 1)) % ${#VPC_PRIVATE_SUBNET_IDS[@]}" | bc)
+        local VPC_LENGTH=${#VPC_PRIVATE_SUBNET_IDS[@]}
+        local SUBNET_INDEX=$(( $((NODEINDEX - 1)) % $VPC_LENGTH ))
         local SUBNETID="${VPC_PRIVATE_SUBNET_IDS[${SUBNET_INDEX}]}"
         local SGID="${VPC_PRIVATE_SECURITY_GROUPID}"
         local PUBLICIP=false
 
         echo_title "Clone ${TARGET_IMAGE} to ${MASTERKUBE_NODE}"
 
-        if [ ${HA_CLUSTER} = "true" ]; then
+        if [ "${HA_CLUSTER}" = "true" ]; then
+
             if [ ${INDEX} -lt ${CONTROLNODE_INDEX} ]; then
                 # NGINX Load blancer
                 MACHINE_TYPE=${NGINX_MACHINE}
 
                 # Use subnet public for NGINX Load balancer
-                if [ "${EXPOSE_PUBLIC_CLUSTER}" == "true" ]; then
-                    PUBLIC_IP_OPTIONS=--associate-public-ip-address
+                if [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ] && [ "${USE_NLB}" = "NO" ]; then
                     PUBLICIP=true
-                    SUBNET_INDEX=$(echo "$((NODEINDEX - 1)) % ${#VPC_PUBLIC_SUBNET_IDS[@]}" | bc)
-                    SUBNETID="${VPC_PUBLIC_SUBNET_IDS[${SUBNET_INDEX}]}"
-                    SGID="${VPC_PUBLIC_SECURITY_GROUPID}"
                     IAM_PROFILE_OPTIONS=
                 fi
             elif [ ${INDEX} -lt ${WORKERNODE_INDEX} ]; then
+                PUBLICIP=${CONTROLPLANE_USE_PUBLICIP}
                 IAM_PROFILE_OPTIONS="--iam-instance-profile Arn=${MASTER_INSTANCE_PROFILE_ARN}"
+                MACHINE_TYPE=${CONTROL_PLANE_MACHINE}
+            else
+                PUBLICIP=${WORKERNODE_USE_PUBLICIP}
             fi
+
         elif [ ${INDEX} -lt ${WORKERNODE_INDEX} ]; then
-            if [ ${INDEX} = ${CONTROLNODE_INDEX} ] && [ "${CONTROLPLANE_USE_PUBLICIP}" == "true" ]; then
-                PUBLIC_IP_OPTIONS=--associate-public-ip-address
-                PUBLICIP=true
-                SUBNET_INDEX=$(echo "$((NODEINDEX - 1)) % ${#VPC_PUBLIC_SUBNET_IDS[@]}" | bc)
-                SUBNETID="${VPC_PUBLIC_SUBNET_IDS[${SUBNET_INDEX}]}"
 
-                SGID="${VPC_PUBLIC_SECURITY_GROUPID}"
-                IAM_PROFILE_OPTIONS="--iam-instance-profile Arn=${MASTER_INSTANCE_PROFILE_ARN}"
+            MACHINE_TYPE=${CONTROL_PLANE_MACHINE}
+
             # Use subnet public for NGINX Load balancer
-            elif [ ${INDEX} -lt ${CONTROLNODE_INDEX} ] && [ "${EXPOSE_PUBLIC_CLUSTER}" == "true" ]; then
-                PUBLIC_IP_OPTIONS=--associate-public-ip-address
-                PUBLICIP=true
-                SUBNET_INDEX=$(echo "$((NODEINDEX - 1)) % ${#VPC_PUBLIC_SUBNET_IDS[@]}" | bc)
-                SUBNETID="${VPC_PUBLIC_SUBNET_IDS[${SUBNET_INDEX}]}"
-
-                SGID="${VPC_PUBLIC_SECURITY_GROUPID}"
-                IAM_PROFILE_OPTIONS=
+            if [ ${INDEX} -lt ${CONTROLNODE_INDEX} ]; then
+                if [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ] && [ "${USE_NLB}" = "NO" ]; then
+                    PUBLICIP=true
+                    IAM_PROFILE_OPTIONS=
+                fi
+            elif [ ${INDEX} = ${CONTROLNODE_INDEX} ]; then
+                if [ "${CONTROLPLANE_USE_PUBLICIP}" = "true" ]; then
+                    PUBLICIP=true
+                    IAM_PROFILE_OPTIONS="--iam-instance-profile Arn=${MASTER_INSTANCE_PROFILE_ARN}"
+                fi
+            else
+                PUBLICIP=${WORKERNODE_USE_PUBLICIP}
             fi
+
         fi
         
-        if [ -z ${NETWORK_INTERFACE_ID} ]; then
-            echo_grey "Launch Instance ${MASTERKUBE_NODE} with subnetid ${SUBNETID} in security group ${SGID}"
+        if [ "${PUBLICIP}" = "true" ]; then
+            PUBLIC_IP_OPTIONS=--associate-public-ip-address
+            SUBNET_INDEX=$(( $((NODEINDEX - 1)) % ${#VPC_PUBLIC_SUBNET_IDS[@]} ))
+            SUBNETID="${VPC_PUBLIC_SUBNET_IDS[${SUBNET_INDEX}]}"
+            SGID="${VPC_PUBLIC_SECURITY_GROUPID}"
+        fi
+
+        if [ "${PUBLICIP}" = "true" ] || [ -z ${NETWORK_INTERFACE_ID} ]; then
+            echo_grey "= Launch Instance ${MASTERKUBE_NODE} with subnetid ${SUBNETID} in security group ${SGID}"
             LAUNCHED_INSTANCE=$(aws ec2 run-instances \
                 --profile "${AWS_PROFILE}" \
                 --region "${AWS_REGION}" \
@@ -1028,15 +1352,15 @@ EOF
                 --key-name "${SSH_KEYNAME}" \
                 --subnet-id "${SUBNETID}" \
                 --security-group-ids "${SGID}" \
-                --user-data "file://config/${NODEGROUP_NAME}/userdata-${SUFFIX}.yaml" \
-                --block-device-mappings "file://config/${NODEGROUP_NAME}/mapping-${SUFFIX}.json" \
+                --user-data "file://${TARGET_CONFIG_LOCATION}/userdata-${SUFFIX}.yaml" \
+                --block-device-mappings "file://${TARGET_CONFIG_LOCATION}/mapping-${SUFFIX}.json" \
                 --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${MASTERKUBE_NODE}},{Key=NodeGroup,Value=${NODEGROUP_NAME}},{Key=kubernetes.io/cluster/${NODEGROUP_NAME},Value=owned},{Key=KubernetesCluster,Value=${NODEGROUP_NAME}}]" \
                 ${PUBLIC_IP_OPTIONS} \
                 ${IAM_PROFILE_OPTIONS})
 
             LAUNCHED_ID=$(echo ${LAUNCHED_INSTANCE} | jq -r '.Instances[0].InstanceId // ""')
         else
-            echo_grey "Launch Instance ${MASTERKUBE_NODE} with associated ENI ${NETWORK_INTERFACE_ID}"
+            echo_grey "= Launch Instance ${MASTERKUBE_NODE} with associated ENI ${NETWORK_INTERFACE_ID}"
             LAUNCHED_INSTANCE=$(aws ec2 run-instances \
                 --profile "${AWS_PROFILE}" \
                 --region "${AWS_REGION}" \
@@ -1045,16 +1369,12 @@ EOF
                 --instance-type "${MACHINE_TYPE}" \
                 --key-name "${SSH_KEYNAME}" \
                 --network-interfaces DeviceIndex=0,NetworkInterfaceId=${NETWORK_INTERFACE_ID} \
-                --user-data "file://config/${NODEGROUP_NAME}/userdata-${SUFFIX}.yaml" \
-                --block-device-mappings "file://config/${NODEGROUP_NAME}/mapping-${SUFFIX}.json" \
+                --user-data "file://${TARGET_CONFIG_LOCATION}/userdata-${SUFFIX}.yaml" \
+                --block-device-mappings "file://${TARGET_CONFIG_LOCATION}/mapping-${SUFFIX}.json" \
                 --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${MASTERKUBE_NODE}},{Key=NodeGroup,Value=${NODEGROUP_NAME}},{Key=kubernetes.io/cluster/${NODEGROUP_NAME},Value=owned},{Key=KubernetesCluster,Value=${NODEGROUP_NAME}}]" \
                 ${IAM_PROFILE_OPTIONS})
 
             LAUNCHED_ID=$(echo ${LAUNCHED_INSTANCE} | jq -r '.Instances[0].InstanceId // ""')
-
-            #if [ "${PUBLICIP}" == "true" ]; then
-            #   aws ec2 associate-address --instance-id ${LAUNCHED_ID} --network-interface-id ${NETWORK_INTERFACE_ID}
-            #fi
         fi
 
         if [ -z ${LAUNCHED_ID} ]; then
@@ -1076,11 +1396,22 @@ EOF
         LAUNCHED_INSTANCE=$(aws ec2  describe-instances --profile ${AWS_PROFILE} --region ${AWS_REGION} --instance-ids ${LAUNCHED_ID} | jq .Reservations[0].Instances[0])
 
         IPADDR=$(echo ${LAUNCHED_INSTANCE} | jq -r '.PrivateIpAddress // ""')
+        PUBADDR=$(echo ${LAUNCHED_INSTANCE} | jq -r '.PublicIpAddress // ""')
         PRIVATEDNS=$(echo ${LAUNCHED_INSTANCE} | jq -r '.PrivateDnsName // ""')
 
-        # Record Masterkube in Route53 DNS
-        if [ ! -z ${ROUTE53_ZONEID} ]; then
-            cat > ./config/${NODEGROUP_NAME}/dns-${SUFFIX}.json <<EOF
+        if [ -z "${PUBADDR}" ] || [ "${PREFER_SSH_PUBLICIP}" = "NO" ]; then
+            SSHADDR=${IPADDR}
+        else
+            SSHADDR=$(echo ${LAUNCHED_INSTANCE} | jq -r '.PublicIpAddress // ""')
+        fi
+
+        if [ "${PUBLICIP}" = "true" ] || [ -z ${NETWORK_INTERFACE_ID} ]; then
+            NETWORK_INTERFACE_ID=$(echo ${LAUNCHED_INSTANCE} | jq -r '.NetworkInterfaces[0].NetworkInterfaceId // ""')
+            ENI=$(aws ec2 describe-network-interfaces --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters Name=network-interface-id,Values=${NETWORK_INTERFACE_ID} 2> /dev/null | jq -r '.NetworkInterfaces[0]//""')
+            echo $ENI | jq . > ${TARGET_CONFIG_LOCATION}/eni-${SUFFIX}.json
+        fi
+
+        ROUTE53_ENTRY=$(cat <<EOF
 {
     "Comment": "${MASTERKUBE_NODE} private DNS entry",
     "Changes": [
@@ -1100,90 +1431,287 @@ EOF
     ]
 }
 EOF
-            aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${ROUTE53_ZONEID} \
-                --change-batch file://config/${NODEGROUP_NAME}/dns-${SUFFIX}.json > /dev/null
+)
+        # Record kubernetes node in Route53 DNS
+        if [ ! -z "${AWS_ROUTE53_ZONE_ID}" ]; then
 
-        elif [ ${INDEX} -ge ${CONTROLNODE_INDEX} ] || [ "${PRIVATE_DOMAIN_NAME}" == "${DOMAIN_NAME}" ]; then
-            if [ ! -z ${GODADDY_API_KEY} ]; then
-                # Register kubernetes nodes in godaddy if we don't use route53 and private domain
-                curl -s -X PUT "https://api.godaddy.com/v1/domains/${DOMAIN_NAME}/records/A/${MASTERKUBE_NODE}" \
+            echo ${ROUTE53_ENTRY} | jq --arg HOSTNAME "${MASTERKUBE_NODE}.${PRIVATE_DOMAIN_NAME}" '.Changes[0].ResourceRecordSet.Name = $HOSTNAME' >  ${TARGET_CONFIG_LOCATION}/dns-private-${SUFFIX}.json
+
+            aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_ZONE_ID} \
+                --change-batch file://${TARGET_CONFIG_LOCATION}/dns-private-${SUFFIX}.json > /dev/null
+
+        elif [ ${INDEX} -ge ${CONTROLNODE_INDEX} ] && [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
+
+            # Register node in public zone DNS if we don't use private DNS
+
+            if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
+
+                # Register kubernetes nodes in route53
+                echo ${ROUTE53_ENTRY} | jq --arg HOSTNAME "${MASTERKUBE_NODE}.${PUBLIC_DOMAIN_NAME}" '.Changes[0].ResourceRecordSet.Name = $HOSTNAME' > ${TARGET_CONFIG_LOCATION}/dns-public-${SUFFIX}.json
+                aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
+                    --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
+                    --change-batch file://${TARGET_CONFIG_LOCATION}/dns-public-${SUFFIX}.json > /dev/null
+
+            elif [ ! -z ${GODADDY_API_KEY} ]; then
+
+                # Register kubernetes nodes in godaddy if we don't use route53
+                curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/A/${MASTERKUBE_NODE}" \
                     -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
                     -H "Content-Type: application/json" -d "[{\"data\": \"${IPADDR}\"}]"
+
             fi
+
         fi
 
-        echo_blue_bold "Wait for ssh ready on ${MASTERKUBE_NODE}, IP=${IPADDR}"
+        echo -n ${LAUNCHED_INSTANCE} | jq . > ${TARGET_CONFIG_LOCATION}/instance-${SUFFIX}.json
+
+        echo_blue_bold "Wait for ssh ready on ${MASTERKUBE_NODE}, private-ip=${IPADDR}, ssh-ip=${SSHADDR}, public-ip=${PUBADDR}"
 
         sleep 5
 
         while :
         do
-            ssh ${SSH_OPTIONS} -o ConnectTimeout=1 "${SEED_USER}@${IPADDR}" sudo hostnamectl set-hostname "${MASTERKUBE_NODE}" 2>/dev/null && break
+            ssh ${SSH_OPTIONS} -o ConnectTimeout=1 "${SEED_USER}@${SSHADDR}" sudo hostnamectl set-hostname "${MASTERKUBE_NODE}" 2>/dev/null && break
             sleep 1
         done
 
-        echo_blue_bold "SSH is ready on ${MASTERKUBE_NODE}, IP=${IPADDR}"
+        echo_blue_bold "SSH is ready on ${MASTERKUBE_NODE}, private-ip=${IPADDR}, ssh-ip=${SSHADDR}, public-ip=${PUBADDR}"
     else
         IPADDR=$(echo ${LAUNCHED_INSTANCE} | jq -r '.PrivateIpAddress // ""')
+        PUBADDR=$(echo ${LAUNCHED_INSTANCE} | jq -r '.PublicIpAddress // ""')
         PRIVATEDNS=$(echo ${LAUNCHED_INSTANCE} | jq -r '.PrivateDnsName // ""')
 
-        echo_blue_bold "Already launched ${MASTERKUBE_NODE}, IP=${IPADDR}"
+        if [ -z "${PUBADDR}" ] || [ "${PREFER_SSH_PUBLICIP}" = "NO" ]; then
+            SSHADDR=${IPADDR}
+        else
+            SSHADDR=${PUBADDR}
+        fi
+
+        echo_blue_bold "Already launched ${MASTERKUBE_NODE}, private-ip=${IPADDR}, ssh-ip=${SSHADDR}, public-ip=${PUBADDR}"
+
+        echo -n ${LAUNCHED_INSTANCE} | jq . > ${TARGET_CONFIG_LOCATION}/instance-${SUFFIX}.json
     fi
 
-    ssh ${SSH_OPTIONS} "${SEED_USER}@${IPADDR}" mkdir -p /home/${SEED_USER}/cluster 2>/dev/null
-
-    echo -n ${LAUNCHED_INSTANCE} | jq . > ./config/${NODEGROUP_NAME}/instance-${SUFFIX}.json
+    ssh ${SSH_OPTIONS} "${SEED_USER}@${SSHADDR}" mkdir -p /home/${SEED_USER}/cluster 2>/dev/null
 }
 
+#===========================================================================================================================================
+#
+#===========================================================================================================================================
+function get_ssh_ip() {
+    local INDEX=$1
+
+    if [ ${PREFER_SSH_PUBLICIP} = "NO" ] || [ -z "${PUBLIC_ADDR_IPS[$INDEX]}" ]; then
+        echo -n ${PRIVATE_ADDR_IPS[$INDEX]}
+    else
+        echo -n ${PUBLIC_ADDR_IPS[$INDEX]}
+    fi
+}
+
+#===========================================================================================================================================
+#
+#===========================================================================================================================================
+
+function register_nlb_dns() {
+    local PRIVATE_NLB_DNS=$1
+    local PUBLIC_NLB_DNS=$2
+
+    if [ ! -z ${AWS_ROUTE53_ZONE_ID} ]; then
+        echo_title "Register dns ${MASTERKUBE} in route53: ${AWS_ROUTE53_ZONE_ID}"
+
+        cat > ${TARGET_CONFIG_LOCATION}/dns-nlb.json <<EOF
+{
+    "Comment": "${MASTERKUBE} private DNS entry",
+    "Changes": [
+        {
+            "Action": "UPSERT",
+            "ResourceRecordSet": {
+                "Name": "${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}",
+                "Type": "CNAME",
+                "TTL": 60,
+                "ResourceRecords": [
+                    {
+                        "Value": "${PRIVATE_NLB_DNS}"
+                    }
+                ]
+            }
+        }
+    ]
+}
+EOF
+
+        aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_ZONE_ID} \
+            --change-batch file://${TARGET_CONFIG_LOCATION}/dns-nlb.json > /dev/null
+
+    fi
+
+    if [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
+        if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
+            echo_title "Register public dns ${MASTERKUBE} in route53: ${AWS_ROUTE53_PUBLIC_ZONE_ID}"
+
+            cat > ${TARGET_CONFIG_LOCATION}/dns-public.json <<EOF
+        {
+            "Comment": "${MASTERKUBE} public DNS entry",
+            "Changes": [
+                {
+                    "Action": "UPSERT",
+                    "ResourceRecordSet": {
+                        "Name": "${MASTERKUBE}.${PUBLIC_DOMAIN_NAME}",
+                        "Type": "CNAME",
+                        "TTL": 60,
+                        "ResourceRecords": [
+                            {
+                                "Value": "${PUBLIC_NLB_DNS}"
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+EOF
+
+            aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
+                --change-batch file://${TARGET_CONFIG_LOCATION}/dns-public.json > /dev/null
+
+        elif [ ! -z "${GODADDY_API_KEY}" ]; then
+            curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${MASTERKUBE}" \
+                -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
+                -H "Content-Type: application/json" \
+                -d "[{\"data\": \"${PUBLIC_NLB_DNS}\"}]"
+        fi
+    fi
+}
+
+#===========================================================================================================================================
+#
+#===========================================================================================================================================
+function create_load_balancer() {
+    if [ "${HA_CLUSTER}" = "true" ] && [ "${USE_NLB}" = "YES" ]; then
+        echo_title "Create NLB ${MASTERKUBE}"
+
+        TARGET_VPC=$(aws ec2 describe-subnets --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters "Name=subnet-id,Values=${VPC_PRIVATE_SUBNET_ID}" | jq -r ".Subnets[0].VpcId")
+
+        eval create-aws-nlb.sh \
+            --profile=${AWS_PROFILE} \
+            --region=${AWS_REGION} \
+            --name=${MASTERKUBE} \
+            --cert-arn=${ACM_CERTIFICATE_ARN} \
+            --expose-public=${EXPOSE_PUBLIC_CLUSTER} \
+            --public-subnet-id="${PUBLIC_SUBNET_NLB_TARGET}" \
+            --private-subnet-id="${PRIVATE_SUBNET_NLB_TARGET}" \
+            --target-vpc-id=${TARGET_VPC} \
+            --target-port="80,443,6443" \
+            --security-group=${VPC_PRIVATE_SECURITY_GROUPID} \
+            --controlplane-instances-id="${CONTROLPLANE_INSTANCEID_NLB_TARGET}" \
+            --public-instances-id="${PUBLIC_INSTANCEID_NLB_TARGET}" \
+            ${SILENT}
+
+        PRIVATE_NLB_DNS=$(aws elbv2 describe-load-balancers --profile=${AWS_PROFILE} --region=${AWS_REGION} | jq -r --arg NLB_NAME "c-${MASTERKUBE}" '.LoadBalancers[]|select(.LoadBalancerName == $NLB_NAME)|.DNSName')
+
+        LOAD_BALANCER_IP="${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}"
+
+        if [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ]; then
+            PUBLIC_NLB_DNS=$(aws elbv2 describe-load-balancers --profile=${AWS_PROFILE} --region=${AWS_REGION} | jq -r --arg NLB_NAME "p-${MASTERKUBE}" '.LoadBalancers[]|select(.LoadBalancerName == $NLB_NAME)|.DNSName')
+        else
+            PUBLIC_NLB_DNS=${PRIVATE_NLB_DNS}
+        fi
+
+        # Record Masterkube in Route53 DNS
+        register_nlb_dns ${PRIVATE_NLB_DNS} ${PUBLIC_NLB_DNS}
+    fi
+
+    echo "export PRIVATE_NLB_DNS=${PRIVATE_NLB_DNS}" >> ${TARGET_CONFIG_LOCATION}/buildenv
+    echo "export PUBLIC_NLB_DNS=${PUBLIC_NLB_DNS}" >> ${TARGET_CONFIG_LOCATION}/buildenv
+
+    if [ "${EXTERNAL_ETCD}" = "true" ]; then
+        echo_title "Created etcd cluster: ${MASTER_NODES}"
+
+        eval prepare-etcd.sh --node-group=${NODEGROUP_NAME} --cluster-nodes="${MASTER_NODES}" ${SILENT}
+
+        for INDEX in $(seq 1 ${CONTROLNODES})
+        do
+            SUFFIX=$(named_index_suffix $INDEX)
+
+            if [ ! -f ${TARGET_CONFIG_LOCATION}/etdc-${SUFFIX}-prepared ]; then
+                INSTANCE_INDEX=$((${INDEX} + ${CONTROLNODE_INDEX} - 1))
+                IPADDR=$(get_ssh_ip ${INSTANCE_INDEX})
+
+                echo_title "Start etcd node: ${IPADDR}"
+                
+                eval scp ${SCP_OPTIONS} bin ${SEED_USER}@${IPADDR}:~ ${SILENT}
+                eval scp ${SCP_OPTIONS} cluster/${NODEGROUP_NAME}/* ${SEED_USER}@${IPADDR}:~/cluster ${SILENT}
+                eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo cp /home/${SEED_USER}/bin/* /usr/local/bin ${SILENT}
+
+                eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo install-etcd.sh \
+                    --user=${SEED_USER} \
+                    --cluster-nodes="${MASTER_NODES}" \
+                    --node-index="${INDEX}" ${SILENT}
+
+                touch ${TARGET_CONFIG_LOCATION}/etdc-${SUFFIX}-prepared
+            fi
+        done
+    fi
+}
+
+#===========================================================================================================================================
+#
+#===========================================================================================================================================
 function start_kubernes_on_instances() {
+    local MASTER_IP=
+
     for INDEX in $(seq ${FIRSTNODE_INDEX} ${LASTNODE_INDEX})
     do
+        local LAUNCHED_INSTANCE=LAUNCHED_INSTANCES[${INDEX}]
         local MASTERKUBE_NODE=
         local CERT_EXTRA_SANS=
         local NODEINDEX=
         local SUFFIX=
 
-        read NODEINDEX SUFFIX MASTERKUBE_NODE <<<$(get_instance_name $INDEX)
+        read NODEINDEX SUFFIX MASTERKUBE_NODE <<< "$(get_instance_name $INDEX)"
 
-        if [ -f ./config/${NODEGROUP_NAME}/instance-${SUFFIX}-prepared ]; then
+        if [ -f ${TARGET_CONFIG_LOCATION}/instance-${SUFFIX}-prepared ]; then
             echo_title "Already prepared VM ${MASTERKUBE_NODE}"
         else
-            IPADDR="${RESERVED_IPS[${INDEX}]}"
+            IPADDR=$(get_ssh_ip ${INDEX})
 
             echo_title "Prepare VM ${MASTERKUBE_NODE} with IP:${IPADDR}"
 
             eval scp ${SCP_OPTIONS} bin ${SEED_USER}@${IPADDR}:~ ${SILENT}
-            eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo cp /home/${SEED_USER}/bin/* /usr/local/bin ${SILENT}
+            eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo mv /home/${SEED_USER}/bin/* /usr/local/bin ${SILENT}
+            eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo chown root:root /usr/local/bin ${SILENT}
 
             NODEINDEX=$((INDEX - ${CONTROLNODE_INDEX}))
 
             if [ "${HA_CLUSTER}" = "true" ]; then
                 # Start nginx load balancer
                 if [ ${INDEX} -lt ${CONTROLNODE_INDEX} ]; then
-                    echo_blue_bold "Start load balancer ${MASTERKUBE_NODE} instance"
+                    echo_blue_bold "Configure load balancer ${MASTERKUBE_NODE} instance in cluster mode"
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo install-load-balancer.sh \
                         --master-nodes="${MASTER_NODES}" \
                         --control-plane-endpoint=${CONTROL_PLANE_ENDPOINT} \
                         --listen-ip="0.0.0.0" ${SILENT}
-                    NLB_DNS=${IPADDR}
+
+                    echo_blue_bold "Done configuring load balancer ${MASTERKUBE_NODE} instance in cluster mode"
                 # Start join worker node
                 elif [ ${INDEX} -ge $((CONTROLNODE_INDEX + ${CONTROLNODES})) ]; then
-                    echo_blue_bold "Join node ${MASTERKUBE_NODE} instance worker node number ${NODEINDEX}, kubernetes version=${KUBERNETES_VERSION}"
+                    echo_blue_bold "Join node ${MASTERKUBE_NODE} instance worker node number ${NODEINDEX} in cluster mode, master-ip=${MASTER_IP}, kubernetes version=${KUBERNETES_VERSION}"
 
-                    eval scp ${SCP_OPTIONS} ./cluster/${NODEGROUP_NAME}/*  ${SEED_USER}@${IPADDR}:~/cluster ${SILENT}
+                    eval scp ${SCP_OPTIONS} ${TARGET_CLUSTER_LOCATION}/*  ${SEED_USER}@${IPADDR}:~/cluster ${SILENT}
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo join-cluster.sh \
-                        --join-master=${JOIN_IP} \
+                        --join-master=${MASTER_IP} \
                         --cloud-provider=${CLOUD_PROVIDER} \
                         --use-external-etcd=${EXTERNAL_ETCD} \
                         --node-group=${NODEGROUP_NAME} \
                         --node-index=${NODEINDEX} ${SILENT}
+
+                    echo_blue_bold "Worker node ${MASTERKUBE_NODE} joined cluster in cluster mode"
                 # Start create first master node
                 elif [ ${INDEX} = ${CONTROLNODE_INDEX} ]; then
-                    echo_blue_bold "Start kubernetes ${MASTERKUBE_NODE} instance master node number ${NODEINDEX}, kubernetes version=${KUBERNETES_VERSION}"
+                    echo_blue_bold "Start kubernetes ${MASTERKUBE_NODE} instance master node number ${NODEINDEX} in cluster mode, kubernetes version=${KUBERNETES_VERSION}"
 
-                    if [ ${DOMAIN_NAME} = ${PRIVATE_DOMAIN_NAME} ]; then
+                    if [ ${DOMAIN_NAME} != ${PRIVATE_DOMAIN_NAME} ]; then
                         CERT_EXTRA_SANS="${MASTERKUBE}.${DOMAIN_NAME},${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}"
                     else
                         CERT_EXTRA_SANS="${MASTERKUBE}.${DOMAIN_NAME}"
@@ -1193,7 +1721,7 @@ function start_kubernes_on_instances() {
                         --max-pods=${MAX_PODS} \
                         --ecr-password=${ECR_PASSWORD} \
                         --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
-                        --private-zone-id="${ROUTE53_ZONEID}" \
+                        --private-zone-id="${AWS_ROUTE53_ZONE_ID}" \
                         --private-zone-name="${PRIVATE_DOMAIN_NAME}" \
                         --use-external-etcd=${EXTERNAL_ETCD} \
                         --node-group=${NODEGROUP_NAME} \
@@ -1208,37 +1736,41 @@ function start_kubernes_on_instances() {
                         --cni-plugin="${CNI_PLUGIN}" \
                         --kubernetes-version="${KUBERNETES_VERSION}" ${SILENT}
 
-                    eval scp ${SCP_OPTIONS} ${SEED_USER}@${IPADDR}:/etc/cluster/* ./cluster/${NODEGROUP_NAME}  ${SILENT}
+                    eval scp ${SCP_OPTIONS} ${SEED_USER}@${IPADDR}:/etc/cluster/* ${TARGET_CLUSTER_LOCATION}  ${SILENT}
 
                     wait_nlb_ready
 
-                    JOIN_IP=${IPADDR}:6443
+                    MASTER_IP=${IPADDR}:6443
+
+                    echo_blue_bold "Master ${MASTERKUBE_NODE} started in cluster mode, master-ip=${MASTER_IP}"
                 # Start control-plane join master node
                 else
-                    echo_blue_bold "Join control-plane ${MASTERKUBE_NODE} instance master node number ${NODEINDEX}, kubernetes version=${KUBERNETES_VERSION}"
+                    echo_blue_bold "Join control-plane ${MASTERKUBE_NODE} instance master node number ${NODEINDEX} in cluster mode, master-ip=${MASTER_IP}, kubernetes version=${KUBERNETES_VERSION}"
 
-                    eval scp ${SCP_OPTIONS} ./cluster/${NODEGROUP_NAME}/*  ${SEED_USER}@${IPADDR}:~/cluster ${SILENT}
+                    eval scp ${SCP_OPTIONS} ${TARGET_CLUSTER_LOCATION}/*  ${SEED_USER}@${IPADDR}:~/cluster ${SILENT}
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo join-cluster.sh \
-                        --join-master=${JOIN_IP} \
+                        --join-master=${MASTER_IP} \
                         --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
                         --control-plane=true \
                         --cloud-provider=${CLOUD_PROVIDER} \
                         --use-external-etcd=${EXTERNAL_ETCD} \
                         --node-group=${NODEGROUP_NAME} \
                         --node-index=${NODEINDEX} ${SILENT}
+
+                    echo_blue_bold "Node control-plane ${MASTERKUBE_NODE} joined master node in cluster mode, master-ip=${MASTER_IP}"
                 fi
             else
                 # Start nginx load balancer
                 if [ ${INDEX} -lt ${CONTROLNODE_INDEX} ]; then
-                    echo_blue_bold "Start load balancer ${MASTERKUBE_NODE} instance with ${MASTER_NODES}"
+                    echo_blue_bold "Configure load balancer ${MASTERKUBE_NODE} instance with ${MASTER_NODES}"
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo install-load-balancer.sh \
                         --master-nodes="${MASTER_NODES}" \
                         --control-plane-endpoint=${CONTROL_PLANE_ENDPOINT} \
                         --listen-ip="0.0.0.0" ${SILENT}
-                    NLB_DNS=${IPADDR}
 
+                    echo_blue_bold "Done configuring load balancer ${MASTERKUBE_NODE} instance"
                 # Single instance master node
                 elif [ ${INDEX} = ${CONTROLNODE_INDEX} ]; then
                     echo_blue_bold "Start kubernetes ${MASTERKUBE_NODE} single instance master node number ${NODEINDEX}, kubernetes version=${KUBERNETES_VERSION}"
@@ -1253,7 +1785,7 @@ function start_kubernes_on_instances() {
                         --max-pods=${MAX_PODS} \
                         --ecr-password=${ECR_PASSWORD} \
                         --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
-                        --private-zone-id="${ROUTE53_ZONEID}" \
+                        --private-zone-id="${AWS_ROUTE53_ZONE_ID}" \
                         --private-zone-name="${PRIVATE_DOMAIN_NAME}" \
                         --cert-extra-sans="${CERT_EXTRA_SANS}" \
                         --container-runtime=${CONTAINER_ENGINE} \
@@ -1265,44 +1797,52 @@ function start_kubernes_on_instances() {
                         --cni-plugin="${CNI_PLUGIN}" \
                         --kubernetes-version="${KUBERNETES_VERSION}" ${SILENT}
 
-                    eval scp ${SCP_OPTIONS} ${SEED_USER}@${IPADDR}:/etc/cluster/* ./cluster/${NODEGROUP_NAME}  ${SILENT}
+                    eval scp ${SCP_OPTIONS} ${SEED_USER}@${IPADDR}:/etc/cluster/* ${CONFIGURATION_LOCATION}/cluster/${NODEGROUP_NAME}  ${SILENT}
 
-                    JOIN_IP=${IPADDR}:6443
+                    MASTER_IP=${IPADDR}:6443
+
+                    echo_blue_bold "Master ${MASTERKUBE_NODE} started master-ip=${MASTER_IP}"
                 else
                     echo_blue_bold "Join node ${MASTERKUBE_NODE} instance worker node number ${NODEINDEX}, kubernetes version=${KUBERNETES_VERSION}"
 
-                    eval scp ${SCP_OPTIONS} ./cluster/${NODEGROUP_NAME}/*  ${SEED_USER}@${IPADDR}:~/cluster ${SILENT}
+                    eval scp ${SCP_OPTIONS} ${TARGET_CLUSTER_LOCATION}/*  ${SEED_USER}@${IPADDR}:~/cluster ${SILENT}
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo join-cluster.sh \
-                        --join-master=${JOIN_IP} \
+                        --join-master=${MASTER_IP} \
                         --control-plane=false \
                         --cloud-provider=${CLOUD_PROVIDER} \
                         --use-external-etcd=${EXTERNAL_ETCD} \
                         --node-group=${NODEGROUP_NAME} \
                         --node-index=${NODEINDEX} ${SILENT}
+
+                    echo_blue_bold "Worker node ${MASTERKUBE_NODE} joined cluster"
                 fi
             fi
 
-            echo ${MASTERKUBE_NODE} > ./config/${NODEGROUP_NAME}/instance-${SUFFIX}-prepared
+            echo ${MASTERKUBE_NODE} > ${TARGET_CONFIG_LOCATION}/instance-${SUFFIX}-prepared
         fi
 
         echo_separator
     done
 }
 
+#===========================================================================================================================================
+#
+#===========================================================================================================================================
 function create_network_interfaces() {
     # Create ENI to capture IP addresses before launch instances
 
     local INDEX=$1
     local ENI_NAME=$2
 
-    read NODEINDEX SUFFIX MASTERKUBE_NODE <<<$(get_instance_name $INDEX)
+    read NODEINDEX SUFFIX MASTERKUBE_NODE <<< "$(get_instance_name $INDEX)"
 
-    local SUBNET_INDEX=$(echo "$((NODEINDEX - 1)) % ${#VPC_PRIVATE_SUBNET_IDS[@]}" | bc)
+    local SUBNET_INDEX=$(( $((NODEINDEX - 1)) % ${#VPC_PRIVATE_SUBNET_IDS[@]} ))
     local SUBNETID="${VPC_PRIVATE_SUBNET_IDS[${SUBNET_INDEX}]}"
     local SGID="${VPC_PRIVATE_SECURITY_GROUPID}"
     local PUBLICIP=false
     local INFID=
+    local ENI=
 
     if [ -z "${ENI_NAME}" ]; then
         ENI_NAME=${MASTERKUBE_NODE}
@@ -1310,71 +1850,96 @@ function create_network_interfaces() {
 
     if [ ${HA_CLUSTER} = "true" ]; then
         if [ ${INDEX} -lt ${CONTROLNODE_INDEX} ]; then
-            # Use subnet public for NGINX Load balancer
-            if [ "${EXPOSE_PUBLIC_CLUSTER}" == "true" ]; then
+            # Use subnet public for NGINX Load balancer if we don't use a NLB
+            if [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ] && [ "${USE_NLB}" = "NO" ]; then
                 PUBLICIP=true
-                SUBNET_INDEX=$(echo "$((NODEINDEX - 1)) % ${#VPC_PUBLIC_SUBNET_IDS[@]}" | bc)
+                SUBNET_INDEX=$(( $((NODEINDEX - 1)) % ${#VPC_PUBLIC_SUBNET_IDS[@]} ))
                 SUBNETID="${VPC_PUBLIC_SUBNET_IDS[${SUBNET_INDEX}]}"
                 SGID="${VPC_PUBLIC_SECURITY_GROUPID}"
             fi
         fi
     elif [ ${INDEX} -lt ${WORKERNODE_INDEX} ]; then
-        if [ ${INDEX} = ${CONTROLNODE_INDEX} ] && [ "${CONTROLPLANE_USE_PUBLICIP}" == "true" ]; then
+        if [ ${INDEX} = ${CONTROLNODE_INDEX} ] && [ "${CONTROLPLANE_USE_PUBLICIP}" = "true" ]; then
             PUBLICIP=true
-            SUBNET_INDEX=$(echo "$((NODEINDEX - 1)) % ${#VPC_PUBLIC_SUBNET_IDS[@]}" | bc)
+            SUBNET_INDEX=$(( $((NODEINDEX - 1)) % ${#VPC_PUBLIC_SUBNET_IDS[@]} ))
             SUBNETID="${VPC_PUBLIC_SUBNET_IDS[${SUBNET_INDEX}]}"
             SGID="${VPC_PUBLIC_SECURITY_GROUPID}"
-        elif [ ${INDEX} -lt ${CONTROLNODE_INDEX} ] && [ "${EXPOSE_PUBLIC_CLUSTER}" == "true" ]; then
+        elif [ ${INDEX} -lt ${CONTROLNODE_INDEX} ] && [ "${EXPOSE_PUBLIC_CLUSTER}" = "true" ]; then
             PUBLICIP=true
-            SUBNET_INDEX=$(echo "$((NODEINDEX - 1)) % ${#VPC_PUBLIC_SUBNET_IDS[@]}" | bc)
+            SUBNET_INDEX=$(( $((NODEINDEX - 1)) % ${#VPC_PUBLIC_SUBNET_IDS[@]} ))
             SUBNETID="${VPC_PUBLIC_SUBNET_IDS[${SUBNET_INDEX}]}"
             SGID="${VPC_PUBLIC_SECURITY_GROUPID}"
         fi
     fi
 
-    if [ ! -f ./config/${NODEGROUP_NAME}/eni-${SUFFIX}.json ]; then
+    if [ ${PUBLICIP} != "true" ]; then
+        if [ -f ${TARGET_CONFIG_LOCATION}/eni-${SUFFIX}.json ]; then
+            INFID=$(cat ${TARGET_CONFIG_LOCATION}/eni-${SUFFIX}.json | jq -r '.NetworkInterfaceId')
+            ENI=$(aws ec2 describe-network-interfaces --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters Name=network-interface-id,Values=${INFID} 2> /dev/null | jq -r '.NetworkInterfaces[0]//""')
 
-        local ENI=$(aws ec2 describe-network-interfaces --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters Name=tag:Name,Values=${ENI_NAME} | jq -r '.NetworkInterfaces[0]//""')
-
-        if [ -z "$ENI" ]; then
-            # ENI doesn't exist
-            echo_blue_bold "Create Reserved ENI ${ENI_NAME}, subnetid=${SUBNETID}, security group=${SGID}"
-
-            ENI=$(aws ec2 create-network-interface --profile ${AWS_PROFILE} --region ${AWS_REGION} --subnet-id ${SUBNETID} --groups ${SGID} \
-                --description "Reserved ENI node[${INDEX}]" | jq '.NetworkInterface')
-
-            INFID=$(echo $ENI | jq -r '.NetworkInterfaceId')
-
-            aws ec2 create-tags --resources ${INFID} --tags \
-                "Key=Name,Value=${ENI_NAME}" \
-                "Key=PublicIP,Value=${PUBLICIP}" \
-                "Key=NodeGroup,Value=${NODEGROUP_NAME}" \
-                "Key=kubernetes.io/cluster/${NODEGROUP_NAME},Value=owned" \
-                "Key=KubernetesCluster,Value=${NODEGROUP_NAME}" 2> /dev/null
-        else
-            echo_blue_bold "Already created Reserved ENI ${ENI_NAME}"
+            if [ -z "${ENI}" ]; then
+                echo_red_bold "Reserved ENI ${ENI_NAME} not found, network-interface-id=${INFID}, recreate it"
+                rm ${TARGET_CONFIG_LOCATION}/eni-${SUFFIX}.json
+            fi
         fi
 
-        echo $ENI | jq . > ./config/${NODEGROUP_NAME}/eni-${SUFFIX}.json
-    else
-        echo_blue_bold "Use declared Reserved ENI ${ENI_NAME}"
+        if [ ! -f ${TARGET_CONFIG_LOCATION}/eni-${SUFFIX}.json ]; then
 
-        ENI=$(cat ./config/${NODEGROUP_NAME}/eni-${SUFFIX}.json)
+            ENI=$(aws ec2 describe-network-interfaces --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters Name=tag:Name,Values=${ENI_NAME} | jq -r '.NetworkInterfaces[0]//""')
+
+            if [ -z "$ENI" ]; then
+                # ENI doesn't exist
+                echo_blue_bold "Create Reserved ENI ${ENI_NAME}, subnetid=${SUBNETID}, security group=${SGID}"
+
+                ENI=$(aws ec2 create-network-interface --profile ${AWS_PROFILE} --region ${AWS_REGION} --subnet-id ${SUBNETID} --groups ${SGID} \
+                    --description "Reserved ENI node[${INDEX}]" | jq '.NetworkInterface')
+
+                INFID=$(echo $ENI | jq -r '.NetworkInterfaceId')
+
+                aws ec2 create-tags --resources ${INFID} --tags \
+                    "Key=Name,Value=${ENI_NAME}" \
+                    "Key=PublicIP,Value=${PUBLICIP}" \
+                    "Key=NodeGroup,Value=${NODEGROUP_NAME}" \
+                    "Key=kubernetes.io/cluster/${NODEGROUP_NAME},Value=owned" \
+                    "Key=KubernetesCluster,Value=${NODEGROUP_NAME}" 2> /dev/null
+            else
+                echo_blue_bold "Already created Reserved ENI ${ENI_NAME}"
+            fi
+
+            echo $ENI | jq . > ${TARGET_CONFIG_LOCATION}/eni-${SUFFIX}.json
+        else
+            echo_blue_bold "Use declared Reserved ENI ${ENI_NAME}"
+
+            ENI=$(cat ${TARGET_CONFIG_LOCATION}/eni-${SUFFIX}.json)
+        fi
+    else
+        echo_red_bold "Don't declare Reserved ENI ${ENI_NAME} because public IP required"
+
+        rm -f ${TARGET_CONFIG_LOCATION}/eni-${SUFFIX}.json
     fi
 }
 
+#===========================================================================================================================================
+#
+#===========================================================================================================================================
 function create_2_extras_eni() {
     local MORE_ADDRESSES=()
-    local SUBNET_INDEX=$(echo "$((CONTROLNODE_INDEX - 1)) % ${#VPC_PRIVATE_SUBNET_IDS[@]}" | bc)
+    local VPC_LENGTH=${#VPC_PRIVATE_SUBNET_IDS[@]}
+    local SUBNET_INDEX=0
+
+    if [ $CONTROLNODE_INDEX -gt 0 ]; then
+        SUBNET_INDEX=$(( $((CONTROLNODE_INDEX - 1)) % $VPC_LENGTH ))
+    fi
 
     for INDEX in $(seq 0 1 2)
     do
         if [ ${SUBNET_INDEX} != ${INDEX} ]; then
             local ENIINDEX=$((INDEX + ${LASTNODE_INDEX} + 1))
+            local NODE_INDEX=$((INDEX + 1))
 
-            create_network_interfaces ${ENIINDEX} ${NODEGROUP_NAME}-master-$(named_index_suffix $INDEX)
+            create_network_interfaces ${ENIINDEX} ${NODEGROUP_NAME}-master-$(named_index_suffix $NODE_INDEX)
 
-            local ENI=$(cat ./config/${NODEGROUP_NAME}/eni-$(named_index_suffix ${ENIINDEX}).json)
+            local ENI=$(cat ${TARGET_CONFIG_LOCATION}/eni-$(named_index_suffix ${ENIINDEX}).json)
             local IPADDR=$(echo $ENI | jq -r '.PrivateIpAddresses[]|select(.Primary == true)|.PrivateIpAddress')
             local PRIVATEDNS=$(echo $ENI | jq -r '.PrivateDnsName')
 
@@ -1386,27 +1951,34 @@ function create_2_extras_eni() {
     echo ${MORE_ADDRESSES[@]}
 }
 
+#===========================================================================================================================================
+#
+#===========================================================================================================================================
 for INDEX in $(seq ${FIRSTNODE_INDEX} ${LASTNODE_INDEX})
 do
     create_network_interfaces ${INDEX}
 
-    ENI=$(cat ./config/${NODEGROUP_NAME}/eni-$(named_index_suffix ${INDEX}).json)
-    IPADDR=$(echo $ENI | jq -r '.PrivateIpAddresses[]|select(.Primary == true)|.PrivateIpAddress')
-    INFID=$(echo $ENI | jq -r '.NetworkInterfaceId')
+    if [ -f ${TARGET_CONFIG_LOCATION}/eni-$(named_index_suffix ${INDEX}).json ]; then
+        ENI=$(cat ${TARGET_CONFIG_LOCATION}/eni-$(named_index_suffix ${INDEX}).json)
+        IPADDR=$(echo $ENI | jq -r '.PrivateIpAddresses[]|select(.Primary == true)|.PrivateIpAddress//""')
+        INFID=$(echo $ENI | jq -r '.NetworkInterfaceId // ""')
+    else
+        IPADDR=
+        INFID=
+    fi
 
     RESERVED_ENI[$INDEX]=${INFID}
-    RESERVED_IPS[$INDEX]=${IPADDR}
+    PRIVATE_ADDR_IPS[$INDEX]=${IPADDR}
 
-    create_vm ${INDEX} ${INFID} ${IPADDR} &
+    create_vm ${INDEX} &
 done
 
 wait_jobs_finish
 
 LOAD_BALANCER_IP=
 GODADDY_REGISTER="[]"
-ROUTE53_REGISTER=$(cat << EOF
+PRIVATE_ROUTE53_REGISTER=$(cat << EOF
 {
-    "Comment": "${MASTERKUBE_NODE} private DNS entry",
     "Changes": [
         {
             "Action": "UPSERT",
@@ -1423,17 +1995,50 @@ ROUTE53_REGISTER=$(cat << EOF
 EOF
 )
 
+PUBLIC_ROUTE53_REGISTER=$(cat << EOF
+{
+    "Changes": [
+        {
+            "Action": "UPSERT",
+            "ResourceRecordSet": {
+                "Name": "${MASTERKUBE}.${PUBLIC_DOMAIN_NAME}",
+                "Type": "A",
+                "TTL": 60,
+                "ResourceRecords": [
+                ]
+            }
+        }
+    ]
+}
+EOF
+)
+
 for INDEX in $(seq ${FIRSTNODE_INDEX} ${LASTNODE_INDEX})
 do
     SUFFIX=$(named_index_suffix $INDEX)
-    LAUNCHED_INSTANCES[${INDEX}]=$(cat ./config/${NODEGROUP_NAME}/instance-${SUFFIX}.json)
+    LAUNCHED_INSTANCES[${INDEX}]=$(cat ${TARGET_CONFIG_LOCATION}/instance-${SUFFIX}.json)
     IPADDR=$(echo ${LAUNCHED_INSTANCES[${INDEX}]} | jq -r '.PrivateIpAddress // ""')
-    PUBLICIPADDR=${IPADDR}
+    PUBLICIPADDR=$(echo ${LAUNCHED_INSTANCES[${INDEX}]} | jq --arg IPADDR ${IPADDR} -r '.PublicIpAddress // $IPADDR')
+    PRIVATE_ADDR_IPS[$INDEX]=${IPADDR}
+    PUBLIC_ADDR_IPS[$INDEX]=${PUBLICIPADDR}
+    REGISTER_IPADDR=NO
 
-    if [ ${INDEX} -eq 0 ] || [ ${INDEX} -lt ${CONTROLNODE_INDEX} ]; then
-        PUBLICIPADDR=$(echo ${LAUNCHED_INSTANCES[${INDEX}]} | jq --arg IPADDR ${IPADDR} -r '.PublicIpAddress // $IPADDR')
-        GODADDY_REGISTER=$(echo ${GODADDY_REGISTER} | jq --arg IPADDR "${PUBLICIPADDR}" '. += [ { "data": $IPADDR } ]')
-        ROUTE53_REGISTER=$(echo ${ROUTE53_REGISTER} | jq --arg IPADDR "${IPADDR}" '.Changes[0].ResourceRecordSet.ResourceRecords += [ { "Value": $IPADDR } ]')
+    if [ ${INDEX} -lt ${WORKERNODE_INDEX} ] && [ ${INDEX} -ge ${CONTROLNODE_INDEX} ] && [ ${EXPOSE_PUBLIC_CLUSTER} = "true" ] && [ "${CONTROLPLANE_USE_PUBLICIP}" = "true" ] && [ "${USE_NLB}" = "NO" ] && [ "${USE_NGINX_GATEWAY}" = "NO" ]; then
+        REGISTER_IPADDR=YES
+    elif [ ${INDEX} -eq 0 ] || [ ${INDEX} -lt ${CONTROLNODE_INDEX} ]; then
+        REGISTER_IPADDR=YES
+    fi
+
+    if [ ${REGISTER_IPADDR} = "YES" ]; then
+        PRIVATE_ROUTE53_REGISTER=$(echo ${PRIVATE_ROUTE53_REGISTER} | jq --arg IPADDR "${IPADDR}" '.Changes[0].ResourceRecordSet.ResourceRecords += [ { "Value": $IPADDR } ]')
+
+        if [ -z "${PUBLICIPADDR}" ]; then
+            GODADDY_REGISTER=$(echo ${GODADDY_REGISTER} | jq --arg IPADDR "${IPADDR}" '. += [ { "data": $IPADDR } ]')
+            PUBLIC_ROUTE53_REGISTER=$(echo ${PUBLIC_ROUTE53_REGISTER} | jq --arg IPADDR "${IPADDR}" '.Changes[0].ResourceRecordSet.ResourceRecords += [ { "Value": $IPADDR } ]')
+        else
+            GODADDY_REGISTER=$(echo ${GODADDY_REGISTER} | jq --arg IPADDR "${PUBLICIPADDR}" '. += [ { "data": $IPADDR } ]')
+            PUBLIC_ROUTE53_REGISTER=$(echo ${PUBLIC_ROUTE53_REGISTER} | jq --arg IPADDR "${PUBLICIPADDR}" '.Changes[0].ResourceRecordSet.ResourceRecords += [ { "Value": $IPADDR } ]')
+        fi
 
         if [ -z ${LOAD_BALANCER_IP} ]; then
             LOAD_BALANCER_IP=${IPADDR}
@@ -1443,31 +2048,47 @@ do
     fi
 done
 
-# Register in godaddy IP addresses point in public IP
-if [ "${USE_NLB}" != "YES" ] && [ ! -z ${GODADDY_API_KEY} ]; then
-    curl -s -X PUT "https://api.godaddy.com/v1/domains/${DOMAIN_NAME}/records/A/${MASTERKUBE}" \
-        -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
-        -H "Content-Type: application/json" \
-        -d "${GODADDY_REGISTER}"
-fi
+if [ "${USE_NLB}" = "NO" ] || [ "${HA_CLUSTER}" = "false" ]; then
+    # Register in Route53 IP addresses point in private IP
+    if [ ! -z ${AWS_ROUTE53_ZONE_ID} ]; then
+        echo ${PRIVATE_ROUTE53_REGISTER} | jq . > ${TARGET_CONFIG_LOCATION}/dns-nlb.json
+        aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
+            --hosted-zone-id ${AWS_ROUTE53_ZONE_ID} \
+            --change-batch file://${TARGET_CONFIG_LOCATION}/dns-nlb.json > /dev/null
 
-if [ ! -z ${ROUTE53_ZONEID} ]; then
-    echo ${ROUTE53_REGISTER} > ./config/${NODEGROUP_NAME}/dns-nlb.json
-    aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
-        --hosted-zone-id ${ROUTE53_ZONEID} \
-        --change-batch file://config/${NODEGROUP_NAME}/dns-nlb.json > /dev/null
+    fi
+
+    if [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
+        if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
+        
+            # Register in Route53 IP addresses point in public IP
+            echo ${PUBLIC_ROUTE53_REGISTER} | jq --arg HOSTNAME "${MASTERKUBE}.${PUBLIC_DOMAIN_NAME}" '.Changes[0].ResourceRecordSet.Name = $HOSTNAME' > ${TARGET_CONFIG_LOCATION}/dns-public.json
+            aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
+                --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
+                --change-batch file://${TARGET_CONFIG_LOCATION}/dns-public.json > /dev/null
+
+        elif [ ! -z ${GODADDY_API_KEY} ]; then
+
+            # Register in godaddy IP addresses point in public IP
+            curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/A/${MASTERKUBE}" \
+                -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
+                -H "Content-Type: application/json" \
+                -d "${GODADDY_REGISTER}"
+
+        fi
+    fi
 fi
 
 CLUSTER_NODES=
-INSTANCEID_NLB_TARGET=
+CONTROLPLANE_INSTANCEID_NLB_TARGET=
 
-${SED} -i -e '/CLUSTER_NODES/d' -e '/NLB_DNS/d' -e '/MASTER_NODES/d' ./config/${NODEGROUP_NAME}/buildenv
+sed -i -e '/CLUSTER_NODES/d' -e '/NLB_DNS/d' -e '/MASTER_NODES/d' ${TARGET_CONFIG_LOCATION}/buildenv
 
 CONTROL_PLANE_ENDPOINT=${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}
 
 if [ "${HA_CLUSTER}" = "true" ]; then
 
-    IPADDR="${RESERVED_IPS[${CONTROLNODE_INDEX}]}"
+    IPADDR="${PRIVATE_ADDR_IPS[${CONTROLNODE_INDEX}]}"
     JOIN_IP="${IPADDR}:6443"
 
     for INDEX in $(seq 1 ${CONTROLNODES})
@@ -1477,7 +2098,7 @@ if [ "${HA_CLUSTER}" = "true" ]; then
         LAUNCHED_INSTANCE=${LAUNCHED_INSTANCES[${INSTANCE_INDEX}]}
         INSTANCE_ID=$(echo ${LAUNCHED_INSTANCE} | jq -r '.InstanceId // ""')
         MASTERKUBE_NODE="${NODEGROUP_NAME}-master-${SUFFIX}"
-        IPADDR="${RESERVED_IPS[${INSTANCE_INDEX}]}"
+        IPADDR="${PRIVATE_ADDR_IPS[${INSTANCE_INDEX}]}"
         NODE_DNS="${MASTERKUBE_NODE}.${PRIVATE_DOMAIN_NAME}:${IPADDR}"
         PRIVATEDNS="$(echo ${LAUNCHED_INSTANCE} | jq -r '.PrivateDnsName // ""')"
 
@@ -1489,114 +2110,43 @@ if [ "${HA_CLUSTER}" = "true" ]; then
             MASTER_NODES="${MASTER_NODES},${NODE_DNS}"
         fi
 
-        if [ -z ${INSTANCEID_NLB_TARGET} ]; then
-            INSTANCEID_NLB_TARGET="${INSTANCE_ID}"
+        if [ -z ${CONTROLPLANE_INSTANCEID_NLB_TARGET} ]; then
+            CONTROLPLANE_INSTANCEID_NLB_TARGET="${INSTANCE_ID}"
         else
-            INSTANCEID_NLB_TARGET="${INSTANCEID_NLB_TARGET},${INSTANCE_ID}"
+            CONTROLPLANE_INSTANCEID_NLB_TARGET="${CONTROLPLANE_INSTANCEID_NLB_TARGET},${INSTANCE_ID}"
         fi
 
     done
 
-    if [ "${USE_NLB}" = "YES" ]; then
-        echo_title "Create NLB nlb-${MASTERKUBE}"
-        TARGET_VPC=$(aws ec2 describe-subnets --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters "Name=subnet-id,Values=${VPC_PRIVATE_SUBNET_ID}" | jq -r ".Subnets[0].VpcId")
+    PUBLIC_INSTANCEID_NLB_TARGET=${CONTROLPLANE_INSTANCEID_NLB_TARGET}
 
-        eval create-aws-nlb.sh --name "${MASTERKUBE}-nlb" \
-            --profile=${AWS_PROFILE} \
-            --region=${AWS_REGION} \
-            --name=nlb-${MASTERKUBE} \
-            --cert-arn=${ACM_CERTIFICATE_ARN} \
-            --expose-public=${EXPOSE_PUBLIC_CLUSTER} \
-            --public-subnet-id="${PUBLIC_SUBNET_NLB_TARGET}" \
-            --private-subnet-id="${PRIVATE_SUBNET_NLB_TARGET}" \
-            --nlb-port=6443 \
-            --target-vpc-id=${TARGET_VPC} \
-            --target-port=6443 \
-            --security-group=${VPC_PRIVATE_SECURITY_GROUPID} \
-            --instances-id="${INSTANCEID_NLB_TARGET}" ${SILENT}
+    if [ "${USE_NGINX_GATEWAY}" = "YES" ]; then
+        PUBLIC_INSTANCEID_NLB_TARGET=
 
-        NLB_DNS=$(aws elbv2 describe-load-balancers --profile=${AWS_PROFILE} --region=${AWS_REGION} | jq -r --arg NLB_NAME nlb-${MASTERKUBE} '.LoadBalancers[]|select(.LoadBalancerName == $NLB_NAME)|.DNSName')
-
-        # Record Masterkube in Route53 DNS
-        if [ ! -z ${ROUTE53_ZONEID} ]; then
-            cat > ./config/${NODEGROUP_NAME}/dns-nlb.json <<EOF
-{
-    "Comment": "${MASTERKUBE} private DNS entry",
-    "Changes": [
-        {
-            "Action": "UPSERT",
-            "ResourceRecordSet": {
-                "Name": "${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}",
-                "Type": "CNAME",
-                "TTL": 60,
-                "ResourceRecords": [
-                    {
-                        "Value": "${NLB_DNS}"
-                    }
-                ]
-            }
-        }
-    ]
-}
-EOF
-            aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${ROUTE53_ZONEID} \
-                --change-batch file://config/${NODEGROUP_NAME}/dns-nlb.json > /dev/null
-        fi
-
-        LOAD_BALANCER_IP="${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}"
-
-        if [ "${EXPOSE_PUBLIC_CLUSTER}" == "true" ]; then
-            PUBLIC_NLB_DNS=$(aws elbv2 describe-load-balancers --profile=${AWS_PROFILE} --region=${AWS_REGION} | jq -r --arg NLB_NAME p-nlb-${MASTERKUBE} '.LoadBalancers[]|select(.LoadBalancerName == $NLB_NAME)|.DNSName')
-        else
-            PUBLIC_NLB_DNS=${NLB_DNS}
-        fi
-
-        if [ ! -z ${GODADDY_API_KEY} ]; then
-            curl -s -X PUT "https://api.godaddy.com/v1/domains/${DOMAIN_NAME}/records/CNAME/${MASTERKUBE}" \
-                -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
-                -H "Content-Type: application/json" \
-                -d "[{\"data\": \"${PUBLIC_NLB_DNS}\"}]"
-        fi
-    fi
-
-    echo "export NLB_DNS=${NLB_DNS}" >> ./config/${NODEGROUP_NAME}/buildenv
-
-    if [ "${EXTERNAL_ETCD}" = "true" ]; then
-        echo_title "Created etcd cluster: ${MASTER_NODES}"
-
-        eval prepare-etcd.sh --node-group=${NODEGROUP_NAME} --cluster-nodes="${MASTER_NODES}" ${SILENT}
-
-        for INDEX in $(seq 1 ${CONTROLNODES})
+        for INSTANCE_INDEX in $(seq ${FIRSTNODE_INDEX} $((FIRSTNODE_INDEX + ${#VPC_PUBLIC_SUBNET_IDS[*]} - 1)))
         do
             SUFFIX=$(named_index_suffix $INDEX)
+            LAUNCHED_INSTANCE=${LAUNCHED_INSTANCES[${INSTANCE_INDEX}]}
+            INSTANCE_ID=$(echo ${LAUNCHED_INSTANCE} | jq -r '.InstanceId // ""')
 
-            if [ ! -f ./config/${NODEGROUP_NAME}/etdc-${SUFFIX}-prepared ]; then
-                INSTANCE_INDEX=$((${INDEX} + ${CONTROLNODE_INDEX} - 1))
-                IPADDR="${RESERVED_IPS[${INSTANCE_INDEX}]}"
-
-                echo_title "Start etcd node: ${IPADDR}"
-                
-                eval scp ${SCP_OPTIONS} bin ${SEED_USER}@${IPADDR}:~ ${SILENT}
-                eval scp ${SCP_OPTIONS} cluster/${NODEGROUP_NAME}/* ${SEED_USER}@${IPADDR}:~/cluster ${SILENT}
-                eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo cp /home/${SEED_USER}/bin/* /usr/local/bin ${SILENT}
-
-                eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo install-etcd.sh \
-                    --user=${SEED_USER} \
-                    --cluster-nodes="${MASTER_NODES}" \
-                    --node-index="${INDEX}" ${SILENT}
-
-                touch ./config/${NODEGROUP_NAME}/etdc-${SUFFIX}-prepared
+            if [ -z ${CONTROLPLANE_INSTANCEID_NLB_TARGET} ]; then
+                PUBLIC_INSTANCEID_NLB_TARGET="${INSTANCE_ID}"
+            else
+                PUBLIC_INSTANCEID_NLB_TARGET="${PUBLIC_INSTANCEID_NLB_TARGET},${INSTANCE_ID}"
             fi
+
         done
     fi
+
+    create_load_balancer
 else
     # Allows to migrate single cluster to HA cluster with 2 more control plane
     echo_blue_bold "Create two extras ENI"
-    read IPRESERVED2 PRIVATEDNS2 IPRESERVED3 PRIVATEDNS3 <<<$(create_2_extras_eni)
+    read IPRESERVED2 PRIVATEDNS2 IPRESERVED3 PRIVATEDNS3 <<< "$(create_2_extras_eni)"
 
-    LOAD_BALANCER_IP=${RESERVED_IPS[0]}
-    IPADDR="${RESERVED_IPS[${CONTROLNODE_INDEX}]}"
-    PRIVATEDNS=$(echo ${LAUNCHED_INSTANCE[${CONTROLNODE_INDEX}]} | jq -r '.PrivateDnsName')
+    LOAD_BALANCER_IP=${PRIVATE_ADDR_IPS[0]}
+    IPADDR="${PRIVATE_ADDR_IPS[${CONTROLNODE_INDEX}]}"
+    PRIVATEDNS=$(echo ${LAUNCHED_INSTANCES[${CONTROLNODE_INDEX}]} | jq -r '.PrivateDnsName')
     JOIN_IP="${IPADDR}:6443"
 
     echo_grey "IPADDR=${PRIVATEDNS}:${IPADDR} IPRESERVED2=${PRIVATEDNS2}:${IPRESERVED2} IPRESERVED3=${PRIVATEDNS3}:${IPRESERVED3}"
@@ -1606,40 +2156,57 @@ else
     MASTER_NODES="${MASTERKUBE}.${DOMAIN_NAME}:${IPADDR}"
 fi
 
-echo "export CLUSTER_NODES=${CLUSTER_NODES}" >> ./config/${NODEGROUP_NAME}/buildenv
-echo "export MASTER_NODES=${MASTER_NODES}" >> ./config/${NODEGROUP_NAME}/buildenv
+echo "export CLUSTER_NODES=${CLUSTER_NODES}" >> ${TARGET_CONFIG_LOCATION}/buildenv
+echo "export MASTER_NODES=${MASTER_NODES}" >> ${TARGET_CONFIG_LOCATION}/buildenv
 
 ### Bootstrap kubernetes
 start_kubernes_on_instances
 
 echo_blue_bold "create cluster done"
 
-MASTER_IP=$(cat ./cluster/${NODEGROUP_NAME}/manager-ip)
-TOKEN=$(cat ./cluster/${NODEGROUP_NAME}/token)
-CACERT=$(cat ./cluster/${NODEGROUP_NAME}/ca.cert)
+MASTER_IP=$(cat ${TARGET_CLUSTER_LOCATION}/manager-ip)
+TOKEN=$(cat ${TARGET_CLUSTER_LOCATION}/token)
+CACERT=$(cat ${TARGET_CLUSTER_LOCATION}/ca.cert)
 
-kubectl create secret tls kube-system -n kube-system --key ./etc/ssl/privkey.pem --cert ./etc/ssl/fullchain.pem --kubeconfig=./cluster/${NODEGROUP_NAME}/config
-kubectl create secret generic autoscaler-ssh-keys -n kube-system --from-file=id_rsa="${SSH_PRIVATE_KEY}" --from-file=id_rsa.pub="${SSH_PUBLIC_KEY}" --kubeconfig=./cluster/${NODEGROUP_NAME}/config
+if [ -z "${PUBLIC_DOMAIN_NAME}" ]; then
+    kubectl create secret tls kube-system -n kube-system --key ${SSL_LOCATION}/privkey.pem --cert ${SSL_LOCATION}/fullchain.pem --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
+fi
 
-kubeconfig-merge.sh ${MASTERKUBE} ./cluster/${NODEGROUP_NAME}/config
+kubectl create secret generic autoscaler-ssh-keys -n kube-system --from-file=id_rsa="${SSH_PRIVATE_KEY}" --from-file=id_rsa.pub="${SSH_PUBLIC_KEY}" --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
+
+kubeconfig-merge.sh ${MASTERKUBE} ${TARGET_CLUSTER_LOCATION}/config
 
 echo_blue_bold "Write aws autoscaler provider config"
 
-echo $(eval "cat <<EOF
-$(<./templates/cluster/grpc-config.json)
-EOF") | jq . >./config/${NODEGROUP_NAME}/grpc-config.json
+if [ ${GRPC_PROVIDER} = "grpc" ]; then
+    CLOUDPROVIDER_CONFIG=grpc-config.json
+    cat > ${TARGET_CONFIG_LOCATION}/${CLOUDPROVIDER_CONFIG} <<EOF
+    {
+        "address": "$CONNECTTO",
+        "secret": "vmware",
+        "timeout": 300
+    }
+EOF
+else
+    CLOUDPROVIDER_CONFIG=grpc-config.yaml
+    echo "address: $CONNECTTO" > ${TARGET_CONFIG_LOCATION}/${CLOUDPROVIDER_CONFIG}
+fi
 
 if [ "${EXTERNAL_ETCD}" = "true" ]; then
     export EXTERNAL_ETCD_ARGS="--use-external-etcd"
+    ETCD_DST_DIR="/etc/etcd/ssl"
 else
     export EXTERNAL_ETCD_ARGS="--no-use-external-etcd"
+    ETCD_DST_DIR="/etc/kubernetes/pki/etcd"
 fi
 
 AUTOSCALER_CONFIG=$(cat <<EOF
 {
     "use-external-etcd": ${EXTERNAL_ETCD},
     "src-etcd-ssl-dir": "/etc/etcd/ssl",
-    "dst-etcd-ssl-dir": "/etc/etcd/ssl",
+    "dst-etcd-ssl-dir": "${ETCD_DST_DIR}",
+    "kubernetes-pki-srcdir": "/etc/kubernetes/pki",
+    "kubernetes-pki-dstdir": "/etc/kubernetes/pki",
     "network": "${TRANSPORT}",
     "listen": "${LISTEN}",
     "secret": "${SCHEME}",
@@ -1647,15 +2214,15 @@ AUTOSCALER_CONFIG=$(cat <<EOF
     "maxNode": ${MAXNODES},
     "maxPods": ${MAX_PODS},
     "node-name-prefix": "autoscaled",
-    "managed-name-prefix": "worker",
+    "managed-name-prefix": "managed",
     "controlplane-name-prefix": "master",
     "nodePrice": 0.0,
     "podPrice": 0.0,
     "image": "${TARGET_IMAGE}",
     "cloud-provider": "${CLOUD_PROVIDER}",
     "optionals": {
-        "pricing": true,
-        "getAvailableMachineTypes": true,
+        "pricing": false,
+        "getAvailableMachineTypes": false,
         "newNodeGroup": false,
         "templateNodeInfo": false,
         "createNodeGroup": false,
@@ -1669,11 +2236,12 @@ AUTOSCALER_CONFIG=$(cat <<EOF
             "--ignore-preflight-errors=All"
         ]
     },
-    "default-machine": "${DEFAULT_MACHINE}",
+    "default-machine": "${AUTOSCALE_MACHINE}",
     "machines": ${MACHINES_TYPES},
     "sync-folder": {
     },
     "ssh-infos" : {
+        "wait-ssh-ready-seconds": 180,
         "user": "${SEED_USER}",
         "ssh-private-key": "${SSH_PRIVATE_KEY_LOCAL}"
     },
@@ -1695,8 +2263,13 @@ AUTOSCALER_CONFIG=$(cat <<EOF
                 }
             ],
             "network": {
-                "route53": "${ROUTE53_ZONEID}",
+                "route53": "${AWS_ROUTE53_ZONE_ID}",
                 "privateZoneName": "${PRIVATE_DOMAIN_NAME}",
+                "accessKey": "${AWS_ROUTE53_ACCESSKEY}",
+                "secretKey": "${AWS_ROUTE53_SECRETKEY}",
+                "token": "${AWS_ROUTE53_TOKEN}",
+                "profile": "${AWS_PROFILE_ROUTE53}",
+                "region" : "${AWS_REGION}",
                 "eni": [
                     {
                         "subnets": [
@@ -1712,53 +2285,69 @@ AUTOSCALER_CONFIG=$(cat <<EOF
 EOF
 )
 
-IFS=, read -a VPC_PRIVATE_SUBNET_IDS <<<${VPC_PRIVATE_SUBNET_ID}
+IFS=, read -a VPC_PRIVATE_SUBNET_IDS <<< "${VPC_PRIVATE_SUBNET_ID}"
 for SUBNET in ${VPC_PRIVATE_SUBNET_IDS[*]}
 do
     AUTOSCALER_CONFIG=$(echo ${AUTOSCALER_CONFIG} | jq --arg SUBNET ${SUBNET} ".aws.\"${NODEGROUP_NAME}\".network.eni[0].subnets += [ \$SUBNET ]")
 done
 
-echo "${AUTOSCALER_CONFIG}" | jq . > ./config/${NODEGROUP_NAME}/kubernetes-aws-autoscaler.json
+echo "${AUTOSCALER_CONFIG}" | jq . > ${TARGET_CONFIG_LOCATION}/kubernetes-aws-autoscaler.json
 
 # Recopy config file on master node
-kubectl create configmap config-cluster-autoscaler --kubeconfig=./cluster/${NODEGROUP_NAME}/config -n kube-system \
-	--from-file ./config/${NODEGROUP_NAME}/grpc-config.json \
-	--from-file ./config/${NODEGROUP_NAME}/kubernetes-aws-autoscaler.json
+kubectl create configmap config-cluster-autoscaler --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -n kube-system \
+	--from-file ${TARGET_CONFIG_LOCATION}/${CLOUDPROVIDER_CONFIG} \
+	--from-file ${TARGET_CONFIG_LOCATION}/kubernetes-aws-autoscaler.json
 
 # Create Pods
+echo_title "= Create EBS provisionner"
+create-ebs-provisionner.sh
+
+echo_title "= Create EFS provisionner"
+create-efs-provisionner.sh
+
+echo_title "= Create CERT Manager"
+create-cert-manager.sh
+
+echo_title "= Create Ingress Controller"
 create-ingress-controller.sh
+
+echo_title "= Create Kubernetes dashboard"
 create-dashboard.sh
+
+echo_title "= Create Kubernetes metric scraper"
 create-metrics.sh
+
+echo_title "= Create Sample hello"
 create-helloworld.sh
+
+echo_title "= Create External DNS"
 create-external-dns.sh
 
 if [ "${LAUNCH_CA}" != "NO" ]; then
+    echo_title "= Create autoscaler"
     create-autoscaler.sh ${LAUNCH_CA}
 fi
 
 # Add cluster config in configmap
-kubectl create configmap masterkube-config --kubeconfig=./cluster/${NODEGROUP_NAME}/config -n kube-system \
-	--from-file ./cluster/${NODEGROUP_NAME}/ca.cert \
-    --from-file ./cluster/${NODEGROUP_NAME}/dashboard-token \
-    --from-file ./cluster/${NODEGROUP_NAME}/token
+kubectl create configmap masterkube-config --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -n kube-system \
+	--from-file ${TARGET_CLUSTER_LOCATION}/ca.cert \
+    --from-file ${TARGET_CLUSTER_LOCATION}/dashboard-token \
+    --from-file ${TARGET_CLUSTER_LOCATION}/token
+
+kubectl create configmap kubernetes-pki --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -n kube-system \
+	--from-file ${TARGET_CLUSTER_LOCATION}/kubernetes/pki
 
 if [ "${EXTERNAL_ETCD}" = "true" ]; then
-    kubectl create secret generic etcd-ssl --kubeconfig=./cluster/${NODEGROUP_NAME}/config -n kube-system \
-        --from-file ./cluster/${NODEGROUP_NAME}/etcd/ssl
+    kubectl create secret generic etcd-ssl --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -n kube-system \
+        --from-file ${TARGET_CLUSTER_LOCATION}/etcd/ssl
 else
-    kubectl create secret generic etcd-ssl --kubeconfig=./cluster/${NODEGROUP_NAME}/config -n kube-system
+    kubectl create secret generic etcd-ssl --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -n kube-system \
+        --from-file ${TARGET_CLUSTER_LOCATION}/kubernetes/pki/etcd
 fi
 
-if [ ! -z ${GODADDY_API_KEY} ]; then
-    curl -s -X PUT "https://api.godaddy.com/v1/domains/${DOMAIN_NAME}/records/CNAME/masterkube-aws-dashboard" \
-        -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
-        -H "Content-Type: application/json" \
-        -d "[{\"data\": \"${MASTERKUBE}.${DOMAIN_NAME}\"}]"
+popd &> /dev/null
 
-    curl -s -X PUT "https://api.godaddy.com/v1/domains/${DOMAIN_NAME}/records/CNAME/helloworld-aws" \
-        -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
-        -H "Content-Type: application/json" \
-        -d "[{\"data\": \"${MASTERKUBE}.${DOMAIN_NAME}\"}]"
-fi
-
-popd
+} 2>&1 | tee -a ${OUTPUT}
+echo "==================================================================================" | tee -a ${OUTPUT}
+echo "= End at: " $(date) | tee -a ${OUTPUT}
+echo "==================================================================================" | tee -a ${OUTPUT}
