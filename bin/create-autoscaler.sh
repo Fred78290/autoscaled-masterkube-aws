@@ -17,22 +17,27 @@ export CLUSTER_AUTOSCALER_VERSION=v1.22.1
 export AWS_AUTOSCALER_VERSION=v1.22.7
 export AUTOSCALER_REGISTRY=$REGISTRY
 export CLOUDPROVIDER_CONFIG=/etc/cluster/grpc-config.json
-export USE_VANILLA_GRPC=--no-use-vanilla-grpc
+export USE_VANILLA_GRPC_ARGS=--no-use-vanilla-grpc
+export USE_CONTROLER_MANAGER_ARGS="--use-controller-manager"
 
 if [ "${GRPC_PROVIDER}" = "externalgrpc" ]; then
-    USE_VANILLA_GRPC=--use-vanilla-grpc
+    USE_VANILLA_GRPC_ARGS=--use-vanilla-grpc
     AUTOSCALER_REGISTRY=k8s.gcr.io/autoscaling
     CLOUDPROVIDER_CONFIG=/etc/cluster/grpc-config.yaml
+fi
+
+if [ -z "${CLOUD_PROVIDER}" ]; then
+    USE_CONTROLER_MANAGER_ARGS="--no-use-controller-manager"
 fi
 
 case $KUBERNETES_MINOR_RELEASE in
     25)
         CLUSTER_AUTOSCALER_VERSION=v1.25.6
-        VSPHERE_AUTOSCALER_VERSION=v1.25.6
+        AWS_AUTOSCALER_VERSION=v1.25.6
         ;;
     26)
         CLUSTER_AUTOSCALER_VERSION=v1.26.1
-        VSPHERE_AUTOSCALER_VERSION=v1.26.1
+        AWS_AUTOSCALER_VERSION=v1.26.1
         ;;
     *)
         echo "Former version aren't supported by aws autoscaler"

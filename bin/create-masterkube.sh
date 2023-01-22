@@ -717,7 +717,7 @@ else
 fi
 
 if [ -z ${TARGET_IMAGE} ]; then
-    ROOT_IMG_NAME=$(aws ec2 describe-images --image-ids ${SEED_IMAGE} | jq -r '.Images[0].Name//""' | gsed -E 's/.+ubuntu-(\w+)-.+/\1-k8s/')
+    ROOT_IMG_NAME=$(aws ec2 describe-images --image-ids ${SEED_IMAGE} | jq -r '.Images[0].Name//""' | sed -E 's/.+ubuntu-(\w+)-.+/\1-k8s/')
 
     if [ "${ROOT_IMG_NAME}" = "-k8s" ]; then
         echo_red_bold "AMI: ${SEED_IMAGE} not found or not ubuntu, exit"
@@ -904,7 +904,7 @@ if [ "${LAUNCH_CA}" != "YES" ]; then
         exit -1
     fi
 else
-    SSH_PRIVATE_KEY_LOCAL="/root/.ssh/id_rsa"
+    SSH_PRIVATE_KEY_LOCAL="/etc/ssh/id_rsa"
     TRANSPORT=unix
     LISTEN="/var/run/cluster-autoscaler/aws.sock"
     CONNECTTO="unix:/var/run/cluster-autoscaler/aws.sock"
@@ -2179,8 +2179,8 @@ kubeconfig-merge.sh ${MASTERKUBE} ${TARGET_CLUSTER_LOCATION}/config
 echo_blue_bold "Write aws autoscaler provider config"
 
 if [ ${GRPC_PROVIDER} = "grpc" ]; then
-    CLOUDPROVIDER_CONFIG=${TARGET_CONFIG_LOCATION}/grpc-config.json
-    cat > ${CLOUDPROVIDER_CONFIG} <<EOF
+    CLOUDPROVIDER_CONFIG=grpc-config.json
+    cat > ${TARGET_CONFIG_LOCATION}/${CLOUDPROVIDER_CONFIG} <<EOF
     {
         "address": "$CONNECTTO",
         "secret": "vmware",
@@ -2188,8 +2188,8 @@ if [ ${GRPC_PROVIDER} = "grpc" ]; then
     }
 EOF
 else
-    CLOUDPROVIDER_CONFIG=${TARGET_CONFIG_LOCATION}/grpc-config.yaml
-    echo "address: $CONNECTTO" > ${CLOUDPROVIDER_CONFIG}
+    CLOUDPROVIDER_CONFIG=grpc-config.yaml
+    echo "address: $CONNECTTO" > ${TARGET_CONFIG_LOCATION}/${CLOUDPROVIDER_CONFIG}
 fi
 
 if [ "${EXTERNAL_ETCD}" = "true" ]; then
@@ -2241,6 +2241,7 @@ AUTOSCALER_CONFIG=$(cat <<EOF
     "sync-folder": {
     },
     "ssh-infos" : {
+        "wait-ssh-ready-seconds": 180,
         "user": "${SEED_USER}",
         "ssh-private-key": "${SSH_PRIVATE_KEY_LOCAL}"
     },
@@ -2294,7 +2295,7 @@ echo "${AUTOSCALER_CONFIG}" | jq . > ${TARGET_CONFIG_LOCATION}/kubernetes-aws-au
 
 # Recopy config file on master node
 kubectl create configmap config-cluster-autoscaler --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -n kube-system \
-	--from-file ${TARGET_CONFIG_LOCATION}/grpc-config.json \
+	--from-file ${TARGET_CONFIG_LOCATION}/${CLOUDPROVIDER_CONFIG} \
 	--from-file ${TARGET_CONFIG_LOCATION}/kubernetes-aws-autoscaler.json
 
 # Create Pods
