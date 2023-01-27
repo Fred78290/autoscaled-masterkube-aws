@@ -21,14 +21,28 @@ if [ $CLOUD_PROVIDER = "external" ]; then
           ;;
   esac
 
-  cat > ${ETC_DIR}/aws-cloud-controller.yaml <<EOF
+
+  if [ $USE_K3S == true ]; then
+    cat >> ${ETC_DIR}/aws-cloud-controller.yaml <<EOF
 args:
   - --v=2
   - --cloud-provider=aws
   - --configure-cloud-routes=false
 image:
-    tag: ${AWS_CONTROLLER_VERSION}
+  tag: ${AWS_CONTROLLER_VERSION}
+nodeSelector:
+  node-role.kubernetes.io/control-plane: "true"
 EOF
+  else
+    cat > ${ETC_DIR}/aws-cloud-controller.yaml <<EOF
+args:
+  - --v=2
+  - --cloud-provider=aws
+  - --configure-cloud-routes=false
+image:
+  tag: ${AWS_CONTROLLER_VERSION}
+EOF
+  fi
 
   helm upgrade aws-cloud-controller-manager aws-cloud-controller-manager/aws-cloud-controller-manager \
       --install \

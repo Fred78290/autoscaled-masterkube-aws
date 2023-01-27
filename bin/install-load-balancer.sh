@@ -101,4 +101,7 @@ create_tcp_stream http_lb 80 /etc/nginx/tcpconf.d/http.conf
 apt install --fix-broken
 
 systemctl restart nginx
-systemctl disable kubelet
+
+if [ -f /etc/systemd/system/kubelet.service ]; then
+    systemctl disable kubelet
+fi
