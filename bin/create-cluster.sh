@@ -23,7 +23,6 @@ export DNS_SERVER=$(echo $VPC_IPV4_CIDR_BLOCK | tr './' ' '| awk '{print $1"."$2
 export KUBECONFIG=/etc/kubernetes/admin.conf
 export KUBEADM_CONFIG=/etc/kubernetes/kubeadm-config.yaml
 export K8_OPTIONS="--ignore-preflight-errors=All --config ${KUBEADM_CONFIG}"
-export KUBEADM_TOKEN=$(kubeadm token generate)
 export APISERVER_ADVERTISE_ADDRESS="${IPADDR}"
 export APISERVER_ADVERTISE_PORT="6443"
 export TOKEN_TLL="0s"
@@ -191,7 +190,7 @@ fi
 
 if [ ${USE_K3S} == "true" ]; then
   ANNOTE_MASTER=true
-  CERT_SANS="${LOAD_BALANCER_IP},${CONTROL_PLANE_ENDPOINT_HOST},${CONTROL_PLANE_ENDPOINT_HOST%%.*}"
+  CERT_SANS="${LOAD_BALANCER_IP},${CONTROL_PLANE_ENDPOINT},${CONTROL_PLANE_ENDPOINT%%.*}"
 
   for CERT_EXTRA in ${CERT_EXTRA_SANS[*]} 
   do
@@ -207,7 +206,7 @@ if [ ${USE_K3S} == "true" ]; then
   done
 
   echo "K3S_MODE=server" > /etc/default/k3s
-  echo "K3S_ARGS='--kubelet-arg=provider-id=vsphere://${VMUUID} --node-name=${NODENAME} --advertise-address=${APISERVER_ADVERTISE_ADDRESS} --advertise-port=${APISERVER_ADVERTISE_PORT} --tls-san=${CERT_SANS}'" > /etc/systemd/system/k3s.service.env
+  echo "K3S_ARGS='--kubelet-arg=provider-id=aws://${ZONEID}/${INSTANCEID} --node-name=${NODENAME} --advertise-address=${APISERVER_ADVERTISE_ADDRESS} --advertise-port=${APISERVER_ADVERTISE_PORT} --tls-san=${CERT_SANS}'" > /etc/systemd/system/k3s.service.env
 
   if [ "$CLOUD_PROVIDER" == "aws" ] || [ "$CLOUD_PROVIDER" == "external" ]; then
     echo "K3S_DISABLE_ARGS='--disable-cloud-controller --disable=servicelb --disable=traefik --disable=metrics-server'" > /etc/systemd/system/k3s.disabled.env
@@ -248,7 +247,7 @@ if [ ${USE_K3S} == "true" ]; then
 
   openssl x509 -pubkey -in /var/lib/rancher/k3s/server/tls/server-ca.crt | openssl rsa -pubin -outform der 2>/dev/null | openssl dgst -sha256 -hex | sed 's/^.* //' | tr -d '\n' > $CLUSTER_DIR/ca.cert
 
-  sed -i -e "s/127.0.0.1/${CONTROL_PLANE_ENDPOINT_HOST}/g" -e "s/default/k8s-${NODEGROUP_NAME}-masterkube-admin@${NODEGROUP_NAME}/g" $CLUSTER_DIR/config
+  sed -i -e "s/127.0.0.1/${CONTROL_PLANE_ENDPOINT}/g" -e "s/default/k8s-${NODEGROUP_NAME}-masterkube-admin@${NODEGROUP_NAME}/g" $CLUSTER_DIR/config
 
   rm -rf $CLUSTER_DIR/kubernetes/pki/temporary-certs
 
@@ -282,6 +281,7 @@ else
   fi
 
   CNI_PLUGIN=$(echo "$CNI_PLUGIN" | tr '[:upper:]' '[:lower:]')
+  KUBEADM_TOKEN=$(kubeadm token generate)
 
   case $CNI_PLUGIN in
       aws)
@@ -504,7 +504,6 @@ fi
         AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.9.3/config/v1.9/aws-k8s-cni.yaml
       fi
 
-
       if [ $CONTAINER_ENGINE == "cri-o" ]; then
         curl -s ${AWS_CNI_URL} | yq e -P - \
             | sed -e 's/mountPath: \/var\/run\/dockershim\.sock/mountPath: \/var\/run\/cri\.sock/g' -e 's/path: \/var\/run\/dockershim\.sock/path: \/var\/run\/cri\.sock/g' > cni-aws.yaml
@@ -561,19 +560,17 @@ fi
 
       kubectl apply -f https://raw.githubusercontent.com/romana/romana/master/containerize/specs/romana-kubeadm.yml 2>&1
 
-    fi
-fi
+  fi
 
-chmod -R uog+r $CLUSTER_DIR/*
-
-if [ "${USE_K3S}" = "false" ]; then
-cat > patch.yaml <<EOF
+  cat > patch.yaml <<EOF
 spec:
     providerID: 'aws://${ZONEID}/${INSTANCEID}'
 EOF
 
-    kubectl patch node ${NODENAME} --patch-file patch.yaml
+  kubectl patch node ${NODENAME} --patch-file patch.yaml
 fi
+
+chmod -R uog+r $CLUSTER_DIR/*
 
 kubectl label nodes ${NODENAME} "cluster.autoscaler.nodegroup/name=${NODEGROUP_NAME}" \
     "node-role.kubernetes.io/master=${ANNOTE_MASTER}" \
@@ -592,6 +589,8 @@ kubectl annotate node ${NODENAME} \
 
 if [ ${MASTER_NODE_ALLOW_DEPLOYMENT} = "YES" ];then
   kubectl taint node ${NODENAME} node-role.kubernetes.io/master:NoSchedule-
+elif [ "${USE_K3S}" == "true" ]; then
+  kubectl taint node ${HOSTNAME} node-role.kubernetes.io/master:NoSchedule node-role.kubernetes.io/control-plane:NoSchedule
 fi
 
 sed -i -e "/${CONTROL_PLANE_ENDPOINT%%.}/d" /etc/hosts

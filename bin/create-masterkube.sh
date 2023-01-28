@@ -79,9 +79,8 @@ export SILENT="&> /dev/null"
 # aws region eu-west1
 export SEED_ARCH=amd64
 export SEED_USER=ubuntu
-export SEED_IMAGE_AMD64="ami-029cfca952b331b52"
-export SEED_IMAGE_ARM64="ami-06a2c4acf333cc050"
-
+export SEED_IMAGE_AMD64="ami-0333305f9719618c7"
+export SEED_IMAGE_ARM64="ami-03d568a0c334477dd"
 export SSL_LOCATION=${PWD}/etc/ssl
 export CONFIGURATION_LOCATION=${PWD}
 export AWSDEFS=${PWD}/bin/aws.defs
@@ -730,7 +729,7 @@ fi
 if [ ${USE_K3S} ]; then
     K3S_CHANNEL=$(curl -s https://update.k3s.io/v1-release/channels)
     IFS=. read K8S_VERSION K8S_MAJOR K8S_MINOR <<< "${KUBERNETES_VERSION}"
-    KUBERNETES_VERSION=$(curl -s https://update.k3s.io/v1-release/channels | jq -r --arg KUBERNETES_VERSION "${K8S_VERSION}.${K8S_MAJOR}" '.data[]|select(.id == $KUBERNETES_VERSION)|.latest' | tr '+' '-')
+    KUBERNETES_VERSION=$(curl -s https://update.k3s.io/v1-release/channels | jq -r --arg KUBERNETES_VERSION "${K8S_VERSION}.${K8S_MAJOR}" '.data[]|select(.id == $KUBERNETES_VERSION)|.latest')
 fi
 
 if [ -z ${TARGET_IMAGE} ]; then
@@ -742,7 +741,7 @@ if [ -z ${TARGET_IMAGE} ]; then
     fi
 
     if [ ${USE_K3S} ]; then
-        TARGET_IMAGE="${ROOT_IMG_NAME}-k3s-${KUBERNETES_VERSION}-${SEED_ARCH}"
+        TARGET_IMAGE=$(echo -n "${ROOT_IMG_NAME}-k3s-${KUBERNETES_VERSION}-${SEED_ARCH}" | tr '+' '-')
     else
         TARGET_IMAGE="${ROOT_IMG_NAME}-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${CONTAINER_ENGINE}-${SEED_ARCH}"
     fi
