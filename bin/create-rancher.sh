@@ -50,7 +50,7 @@ echo_blue_dot_title "Wait Rancher bootstrap"
 
 while [ -z ${BOOTSTRAP_SECRET} ];
 do
-    BOOTSTRAP_SECRET=$(kubectl get secret --namespace ${K8NAMESPACE} bootstrap-secret -o go-template='{{.data.bootstrapPassword|base64decode}}')
+    BOOTSTRAP_SECRET=$(kubectl get secret --namespace ${K8NAMESPACE} bootstrap-secret -o go-template='{{.data.bootstrapPassword|base64decode}}' 2>/dev/null)
     sleep 1
     echo_blue_dot
 done
