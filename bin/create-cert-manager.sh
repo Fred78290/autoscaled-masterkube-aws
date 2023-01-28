@@ -29,7 +29,7 @@ export K8NAMESPACE=cert-manager
 export ETC_DIR=${TARGET_DEPLOY_LOCATION}/cert-manager
 export KUBERNETES_TEMPLATE=./templates/cert-manager
 
-KUBERNETES_MINOR_RELEASE=$(echo -n $KUBERNETES_VERSION | tr '.' ' ' | awk '{ print $2 }')
+KUBERNETES_MINOR_RELEASE=$(echo -n $KUBERNETES_VERSION | awk -F. '{ print $2 }')
 
 case $KUBERNETES_MINOR_RELEASE in
     24)
