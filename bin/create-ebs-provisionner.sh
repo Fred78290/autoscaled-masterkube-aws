@@ -7,7 +7,7 @@ if [ $CLOUD_PROVIDER = "external" ]; then
   helm repo add aws-cloud-controller-manager https://kubernetes.github.io/cloud-provider-aws
   helm repo update aws-cloud-controller-manager
 
-  KUBERNETES_MINOR_RELEASE=$(echo -n $KUBERNETES_VERSION | tr '.' ' ' | awk '{ print $2 }')
+  KUBERNETES_MINOR_RELEASE=$(echo -n $KUBERNETES_VERSION | awk -F. '{ print $2 }')
 
   case $KUBERNETES_MINOR_RELEASE in
       24)
@@ -21,14 +21,28 @@ if [ $CLOUD_PROVIDER = "external" ]; then
           ;;
   esac
 
-  cat > ${ETC_DIR}/aws-cloud-controller.yaml <<EOF
+
+  if [ $USE_K3S == true ]; then
+    cat >> ${ETC_DIR}/aws-cloud-controller.yaml <<EOF
 args:
   - --v=2
   - --cloud-provider=aws
   - --configure-cloud-routes=false
 image:
-    tag: ${AWS_CONTROLLER_VERSION}
+  tag: ${AWS_CONTROLLER_VERSION}
+nodeSelector:
+  node-role.kubernetes.io/control-plane: "true"
 EOF
+  else
+    cat > ${ETC_DIR}/aws-cloud-controller.yaml <<EOF
+args:
+  - --v=2
+  - --cloud-provider=aws
+  - --configure-cloud-routes=false
+image:
+  tag: ${AWS_CONTROLLER_VERSION}
+EOF
+  fi
 
   helm upgrade aws-cloud-controller-manager aws-cloud-controller-manager/aws-cloud-controller-manager \
       --install \

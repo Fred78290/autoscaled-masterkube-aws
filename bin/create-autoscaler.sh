@@ -33,11 +33,11 @@ fi
 case $KUBERNETES_MINOR_RELEASE in
     25)
         CLUSTER_AUTOSCALER_VERSION=v1.25.6
-        AWS_AUTOSCALER_VERSION=v1.25.6
+        AWS_AUTOSCALER_VERSION=v1.25.7
         ;;
     26)
         CLUSTER_AUTOSCALER_VERSION=v1.26.1
-        AWS_AUTOSCALER_VERSION=v1.26.1
+        AWS_AUTOSCALER_VERSION=v1.26.2
         ;;
     *)
         echo "Former version aren't supported by aws autoscaler"

@@ -22,6 +22,7 @@ SECURITY_GROUPID=
 SSH_KEY_PUB=~/.ssh/id_rsa.pub
 SSH_KEY_PRIV=~/.ssh/id_rsa
 MASTER_USE_PUBLICIP=true
+USE_K3S=false
 
 SSH_OPTIONS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
@@ -33,7 +34,7 @@ else
     TZ=$(sudo systemsetup -gettimezone | awk '{print $2}')
 fi
 
-TEMP=`getopt -o kfc:i:n:op:s:u:v: --long cache-dir:,container-runtime:,arch:,ecr-password:,force,profile:,region:,subnet-id:,sg-id:,use-public-ip:,user:,ami:,custom-image:,ssh-key-name:,ssh-key-file:,ssh-key-private:,cni-plugin:,cni-plugin-version:,kubernetes-version: -n "$0" -- "$@"`
+TEMP=`getopt -o kfc:i:n:op:s:u:v: --long use-k3s:,cache-dir:,container-runtime:,arch:,ecr-password:,force,profile:,region:,subnet-id:,sg-id:,use-public-ip:,user:,ami:,custom-image:,ssh-key-name:,ssh-key-file:,ssh-key-private:,cni-plugin:,cni-plugin-version:,kubernetes-version: -n "$0" -- "$@"`
 eval set -- "$TEMP"
 
 # extract options and their arguments into variables.
@@ -59,7 +60,7 @@ while true ; do
         --subnet-id) SUBNET_ID="${2}" ; shift 2;;
         --sg-id) SECURITY_GROUPID="${2}" ; shift 2;;
         --use-public-ip) MASTER_USE_PUBLICIP="${2}" ; shift 2;;
-
+        --use-k3s) USE_K3S=$2 ; shift 2;;
         --cache-dir) CACHE=$2 ; shift 2;;
 
         --container-runtime)
@@ -131,7 +132,7 @@ fi
 TARGET_IMAGE_ID=$(aws ec2 describe-images --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters "Name=architecture,Values=x86_64" "Name=name,Values=${TARGET_IMAGE}" "Name=virtualization-type,Values=hvm" 2>/dev/null | jq -r '.Images[0].ImageId//""')
 KEYEXISTS=$(aws ec2 describe-key-pairs --profile ${AWS_PROFILE} --region ${AWS_REGION} --key-names "${SSH_KEYNAME}" 2>/dev/null | jq  -r '.KeyPairs[].KeyName//""')
 
-if [ ! -z "${TARGET_IMAGE_ID}" ]; then
+if [ -n "${TARGET_IMAGE_ID}" ]; then
     if [ $FORCE = NO ]; then
         echo_blue_bold "$TARGET_IMAGE already exists!"
         exit 0
@@ -148,8 +149,8 @@ if [ -z ${KEYEXISTS} ]; then
     aws ec2 import-key-pair --profile ${AWS_PROFILE} --region ${AWS_REGION} --key-name ${SSH_KEYNAME} --public-key-material "file://${SSH_KEY_PUB}"
 fi
 
-KUBERNETES_MINOR_RELEASE=$(echo -n $KUBERNETES_VERSION | tr '.' ' ' | awk '{ print $2 }')
-CRIO_VERSION=$(echo -n $KUBERNETES_VERSION | tr -d 'v' | tr '.' ' ' | awk '{ print $1"."$2 }')
+KUBERNETES_MINOR_RELEASE=$(echo -n $KUBERNETES_VERSION | awk -F. '{ print $2 }')
+CRIO_VERSION=$(echo -n $KUBERNETES_VERSION | tr -d 'v' | awk -F. '{ print $1"."$2 }')
 
 echo_blue_bold "Prepare ${TARGET_IMAGE} image with cri-o version: $CRIO_VERSION and kubernetes: $KUBERNETES_VERSION"
 
@@ -178,6 +179,9 @@ ECR_PASSWORD=${ECR_PASSWORD}
 CRIO_VERSION=${CRIO_VERSION}
 CONTAINER_ENGINE=${CONTAINER_ENGINE}
 CONTAINER_CTL=${CONTAINER_CTL}
+USE_K3S=${USE_K3S}
+AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
 
 echo "==============================================================================================================================="
 echo "= Upgrade ubuntu distro"
@@ -233,7 +237,105 @@ SHELL
 EOF
 
 cat >> "${CACHE}/prepare-image.sh" <<"EOF"
+echo "net.bridge.bridge-nf-call-ip6tables = 1" >> /etc/sysctl.conf
+echo "net.bridge.bridge-nf-call-iptables = 1" >> /etc/sysctl.conf
+echo "net.bridge.bridge-nf-call-arptables = 1" >> /etc/sysctl.conf
+echo "net.ipv6.conf.all.disable_ipv6 = 1" >> /etc/sysctl.conf
+echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
 
+echo "overlay" >> /etc/modules
+echo "br_netfilter" >> /etc/modules
+
+modprobe overlay
+modprobe br_netfilter
+
+echo '1' > /proc/sys/net/bridge/bridge-nf-call-iptables
+
+sysctl --system
+
+if [ "${USE_K3S}" == "true" ]; then
+    CREDENTIALS_CONFIG=/var/lib/rancher/credentialprovider/config.yaml
+    CREDENTIALS_BIN=/var/lib/rancher/credentialprovider/bin
+else
+    CREDENTIALS_CONFIG=/etc/kubernetes/credential.yaml
+    CREDENTIALS_BIN=/usr/local/bin
+fi
+
+mkdir -p $(dirname ${CREDENTIALS_CONFIG})
+mkdir -p ${CREDENTIALS_BIN}
+
+if [ -n "${AWS_ACCESS_KEY_ID}" ] && [ -n "${AWS_SECRET_ACCESS_KEY}" ]; then
+
+    curl -sL https://github.com/Fred78290/aws-ecr-credential-provider/releases/download/v1.0.0/ecr-credential-provider-${SEED_ARCH} -o ${CREDENTIALS_BIN}/ecr-credential-provider
+    chmod +x ${CREDENTIALS_BIN}/ecr-credential-provider
+
+    mkdir -p /root/.aws
+
+    cat > /root/.aws/config  <<SHELL
+[default]
+output = json
+region = us-east-1
+cli_binary_format=raw-in-base64-out
+SHELL
+
+    cat > /root/.aws/credentials  <<SHELL
+[default]
+aws_access_key_id = ${AWS_ACCESS_KEY_ID}
+aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}
+SHELL
+
+    cat > ${CREDENTIALS_CONFIG} <<SHELL
+apiVersion: kubelet.config.k8s.io/v1alpha1
+kind: CredentialProviderConfig
+providers:
+  - name: ecr-credential-provider
+    matchImages:
+      - "*.dkr.ecr.*.amazonaws.com"
+      - "*.dkr.ecr.*.amazonaws.cn"
+      - "*.dkr.ecr-fips.*.amazonaws.com"
+      - "*.dkr.ecr.us-iso-east-1.c2s.ic.gov"
+      - "*.dkr.ecr.us-isob-east-1.sc2s.sgov.gov"
+    defaultCacheDuration: "12h"
+    apiVersion: credentialprovider.kubelet.k8s.io/v1alpha1
+    args:
+      - get-credentials
+    env:
+      - name: AWS_ACCESS_KEY_ID 
+        value: ${AWS_ACCESS_KEY_ID}
+      - name: AWS_SECRET_ACCESS_KEY
+        value: ${AWS_SECRET_ACCESS_KEY}
+SHELL
+fi
+EOF
+
+if [ "${USE_K3S}" == "true" ]; then
+    cat >> "${CACHE}/prepare-image.sh" <<"EOF"
+curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${KUBERNETES_VERSION}" INSTALL_K3S_SKIP_ENABLE=true sh -
+
+mkdir -p /etc/systemd/system/k3s.service.d
+echo "K3S_MODE=agent" > /etc/default/k3s
+echo "K3S_ARGS=" > /etc/systemd/system/k3s.service.env
+echo "K3S_SERVER_ARGS=" > /etc/systemd/system/k3s.server.env
+echo "K3S_AGENT_ARGS=" > /etc/systemd/system/k3s.agent.env
+echo "K3S_DISABLE_ARGS=" > /etc/systemd/system/k3s.disabled.env
+
+cat > /etc/systemd/system/k3s.service.d/10-k3s.conf <<"SHELL"
+[Service]
+Environment="KUBELET_ARGS=--kubelet-arg=cloud-provider=external --kubelet-arg=fail-swap-on=false"
+EnvironmentFile=-/etc/default/%N
+EnvironmentFile=-/etc/sysconfig/%N
+EnvironmentFile=-/etc/systemd/system/k3s.service.env
+EnvironmentFile=-/etc/systemd/system/k3s.server.env
+EnvironmentFile=-/etc/systemd/system/k3s.agent.env
+EnvironmentFile=-/etc/systemd/system/k3s.disabled.env
+ExecStart=
+ExecStart=/usr/local/bin/k3s $K3S_MODE $K3S_ARGS $K3S_SERVER_ARGS $K3S_AGENT_ARGS $K3S_DISABLE_ARGS $KUBELET_ARGS \
+
+SHELL
+EOF
+
+else
+    cat >> "${CACHE}/prepare-image.sh" <<"EOF"
 function pull_image() {
     local DOCKER_IMAGES=$(curl -s $1 | yq eval -P - | grep -E "\simage: " | sed -E 's/.+image: (.+)/\1/g')
     local USERNAME=$2
@@ -256,22 +358,6 @@ function pull_image() {
 
 mkdir -p /opt/cni/bin
 mkdir -p /usr/local/bin
-
-echo "net.bridge.bridge-nf-call-ip6tables = 1" >> /etc/sysctl.conf
-echo "net.bridge.bridge-nf-call-iptables = 1" >> /etc/sysctl.conf
-echo "net.bridge.bridge-nf-call-arptables = 1" >> /etc/sysctl.conf
-echo "net.ipv6.conf.all.disable_ipv6 = 1" >> /etc/sysctl.conf
-echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
-
-echo "overlay" >> /etc/modules
-echo "br_netfilter" >> /etc/modules
-
-modprobe overlay
-modprobe br_netfilter
-
-echo '1' > /proc/sys/net/bridge/bridge-nf-call-iptables
-
-sysctl --system
 
 . /etc/os-release
 
@@ -304,14 +390,14 @@ if [ "${CONTAINER_ENGINE}" = "docker" ]; then
 
     cat > /etc/docker/daemon.json <<SHELL
 {
-    "exec-opts": [
-        "native.cgroupdriver=systemd"
-    ],
-    "log-driver": "json-file",
-    "log-opts": {
-        "max-size": "100m"
-    },
-    "storage-driver": "overlay2"
+"exec-opts": [
+    "native.cgroupdriver=systemd"
+],
+"log-driver": "json-file",
+"log-opts": {
+    "max-size": "100m"
+},
+"storage-driver": "overlay2"
 }
 SHELL
 
@@ -350,11 +436,6 @@ else
     echo
 
     mkdir -p /etc/crio/crio.conf.d/
-
-#    cat > /etc/crio/crio.conf.d/02-cgroup-manager.conf <<SHELL
-#conmon_cgroup = "pod"
-#cgroup_manager = "cgroupfs"
-#SHELL
 
     systemctl daemon-reload
     systemctl enable crio
@@ -416,9 +497,6 @@ cd /usr/local/bin
 curl -sL --remote-name-all https://storage.googleapis.com/kubernetes-release/release/${KUBERNETES_VERSION}/bin/linux/${SEED_ARCH}/{kubeadm,kubelet,kubectl,kube-proxy}
 chmod +x /usr/local/bin/kube*
 
-curl -sL https://github.com/Fred78290/aws-ecr-credential-provider/releases/download/v1.0.0/ecr-credential-provider-${SEED_ARCH} -o ecr-credential-provider
-chmod +x /usr/local/bin/ecr-credential-provider
-
 echo
 
 echo "==============================================================================================================================="
@@ -428,23 +506,6 @@ echo "==========================================================================
 mkdir -p /etc/systemd/system/kubelet.service.d
 mkdir -p /var/lib/kubelet
 mkdir -p /etc/kubernetes
-
-cat > /etc/kubernetes/credential.yaml <<SHELL
-apiVersion: kubelet.config.k8s.io/v1alpha1
-kind: CredentialProviderConfig
-providers:
-  - name: ecr-credential-provider
-    matchImages:
-      - "*.dkr.ecr.*.amazonaws.com"
-      - "*.dkr.ecr.*.amazonaws.cn"
-      - "*.dkr.ecr-fips.*.amazonaws.com"
-      - "*.dkr.ecr.us-iso-east-1.c2s.ic.gov"
-      - "*.dkr.ecr.us-isob-east-1.sc2s.sgov.gov"
-    defaultCacheDuration: "12h"
-    apiVersion: credentialprovider.kubelet.k8s.io/v1alpha1
-    args:
-      - get-credentials
-SHELL
 
 cat > /etc/systemd/system/kubelet.service <<SHELL
 [Unit]
@@ -494,13 +555,13 @@ SHELL
 fi
 
 if [ ${CONTAINER_ENGINE} = "docker" ]; then
-    echo 'KUBELET_EXTRA_ARGS="--image-credential-provider-config=/etc/kubernetes/credential.yaml --image-credential-provider-bin-dir=/usr/local/bin/ --network-plugin=cni"' > /etc/default/kubelet
+    echo 'KUBELET_EXTRA_ARGS="--image-credential-provider-config=${CREDENTIALS_CONFIG} --image-credential-provider-bin-dir=${CREDENTIALS_BIN} --network-plugin=cni"' > /etc/default/kubelet
     echo 'KUBELET_KUBEADM_ARGS=""' > /var/lib/kubelet/kubeadm-flags.env
 elif [ ${CONTAINER_ENGINE} = "containerd" ]; then
-    echo 'KUBELET_EXTRA_ARGS="--image-credential-provider-config=/etc/kubernetes/credential.yaml --image-credential-provider-bin-dir=/usr/local/bin/"' > /etc/default/kubelet
+    echo 'KUBELET_EXTRA_ARGS="--image-credential-provider-config=${CREDENTIALS_CONFIG} --image-credential-provider-bin-dir=${CREDENTIALS_BIN}"' > /etc/default/kubelet
     echo 'KUBELET_KUBEADM_ARGS="--container-runtime=remote --container-runtime-endpoint=/run/containerd/containerd.sock"' > /var/lib/kubelet/kubeadm-flags.env
 else
-    echo 'KUBELET_EXTRA_ARGS="--image-credential-provider-config=/etc/kubernetes/credential.yaml --image-credential-provider-bin-dir=/usr/local/bin/"' > /etc/default/kubelet
+    echo 'KUBELET_EXTRA_ARGS="--image-credential-provider-config=${CREDENTIALS_CONFIG} --image-credential-provider-bin-dir=${CREDENTIALS_BIN}"' > /etc/default/kubelet
     echo 'KUBELET_KUBEADM_ARGS="--container-runtime=remote --container-runtime-endpoint=/var/run/crio/crio.sock"' > /var/lib/kubelet/kubeadm-flags.env
 fi
 
@@ -528,13 +589,13 @@ echo "==========================================================================
 
 if [ "$CNI_PLUGIN" = "aws" ]; then
     if [ ${KUBERNETES_MINOR_RELEASE} -gt 24 ]; then
-      AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.12.1/config/master/aws-k8s-cni.yaml
+    AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.12.1/config/master/aws-k8s-cni.yaml
     elif [ ${KUBERNETES_MINOR_RELEASE} -gt 22 ]; then
-      AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.11/config/master/aws-k8s-cni.yaml
+    AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.11/config/master/aws-k8s-cni.yaml
     elif [ ${KUBERNETES_MINOR_RELEASE} -gt 20 ]; then
-      AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.10/config/master/aws-k8s-cni.yaml
+    AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.10/config/master/aws-k8s-cni.yaml
     else
-      AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.9.3/config/v1.9/aws-k8s-cni.yaml
+    AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.9.3/config/v1.9/aws-k8s-cni.yaml
     fi
     pull_image ${AWS_CNI_URL} AWS ${ECR_PASSWORD}
 elif [ "$CNI_PLUGIN" = "calico" ]; then
@@ -554,6 +615,13 @@ elif [ "$CNI_PLUGIN" = "kube" ]; then
 elif [ "$CNI_PLUGIN" = "romana" ]; then
     pull_image https://raw.githubusercontent.com/romana/romana/master/containerize/specs/romana-kubeadm.yml
 fi
+EOF
+fi
+
+
+cat >> "${CACHE}/prepare-image.sh" <<"EOF"
+apt dist-upgrade -y
+apt autoremove -y
 
 echo "==============================================================================================================================="
 echo "= Cleanup"
@@ -565,6 +633,7 @@ rm -rf /etc/cni/net.d/*
 [ -f /etc/cloud/cloud.cfg.d/50-curtin-networking.cfg ] && rm /etc/cloud/cloud.cfg.d/50-curtin-networking.cfg
 rm /etc/netplan/*
 cloud-init clean
+cloud-init clean -l
 
 rm -rf /etc/apparmor.d/cache/* /etc/apparmor.d/cache/.features
 /usr/bin/truncate --size 0 /etc/machine-id

@@ -29,7 +29,7 @@ export K8NAMESPACE=cert-manager
 export ETC_DIR=${TARGET_DEPLOY_LOCATION}/cert-manager
 export KUBERNETES_TEMPLATE=./templates/cert-manager
 
-KUBERNETES_MINOR_RELEASE=$(echo -n $KUBERNETES_VERSION | tr '.' ' ' | awk '{ print $2 }')
+KUBERNETES_MINOR_RELEASE=$(echo -n $KUBERNETES_VERSION | awk -F. '{ print $2 }')
 
 case $KUBERNETES_MINOR_RELEASE in
     24)
@@ -74,12 +74,12 @@ else
         kubectl create secret generic zero-ssl-eabsecret -n $K8NAMESPACE --from-literal secret="${ZEROSSL_EAB_HMAC_SECRET}"
     fi
 
-    if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
+    if [ -n "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
         echo "Register route53 issuer"
         kubectl create secret generic route53-credentials-secret --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -n $K8NAMESPACE --from-literal=secret=${AWS_ROUTE53_SECRETKEY}
 
         deploy cluster-issuer-route53
-    elif [ ! -z ${GODADDY_API_KEY} ]; then
+    elif [ -n ${GODADDY_API_KEY} ]; then
         echo "Register godaddy issuer"
         helm upgrade -i godaddy-webhook godaddy-webhook/godaddy-webhook \
             --version ${GODADDY_WEBHOOK_VERSION} \

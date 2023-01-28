@@ -38,6 +38,7 @@ export CLOUD_PROVIDER=aws
 export USE_NLB=NO
 export USE_ZEROSSL=YES
 export HA_CLUSTER=false
+export USE_K3S=false
 export FIRSTNODE_INDEX=0
 export CONTROLNODES=1
 export WORKERNODES=3
@@ -63,7 +64,7 @@ export OSDISTRO=$(uname -s)
 export TRANSPORT="tcp"
 export SSH_KEYNAME="aws-k8s-key"
 export VOLUME_TYPE=gp3
-export VOLUME_SIZE=10
+export VOLUME_SIZE=20
 export MAX_PODS=110
 export MASTER_PROFILE_NAME="kubernetes-master-profile"
 export WORKER_PROFILE_NAME="kubernetes-worker-profile"
@@ -78,9 +79,8 @@ export SILENT="&> /dev/null"
 # aws region eu-west1
 export SEED_ARCH=amd64
 export SEED_USER=ubuntu
-export SEED_IMAGE_AMD64="ami-029cfca952b331b52"
-export SEED_IMAGE_ARM64="ami-06a2c4acf333cc050"
-
+export SEED_IMAGE_AMD64="ami-0333305f9719618c7"
+export SEED_IMAGE_ARM64="ami-03d568a0c334477dd"
 export SSL_LOCATION=${PWD}/etc/ssl
 export CONFIGURATION_LOCATION=${PWD}
 export AWSDEFS=${PWD}/bin/aws.defs
@@ -158,6 +158,7 @@ Options are:
 
 ### Design the kubernetes cluster
 
+--use-k3s                                        # Use k3s in place of kubeadm, default ${USE_K3S}
 --ha-cluster                                     # Allow to create an HA cluster, default ${HA_CLUSTER}
 --worker-nodes=<value>                           # Specify the number of worker nodes created in HA cluster, default ${WORKERNODES}
 --container-runtime=<docker|containerd|cri-o>    # Specify which OCI runtime to use, default ${CONTAINER_ENGINE}
@@ -244,7 +245,7 @@ Options are:
 EOF
 }
 
-TEMP=$(getopt -o hvxr --long cloudprovider:,use-zerossl,zerossl-eab-kid:,zerossl-eab-hmac-secret:,godaddy-key:,godaddy-secret:,route53-profile:,route53-zone-id:,cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
+TEMP=$(getopt -o hvxr --long use-k3s:,cloudprovider:,use-zerossl,zerossl-eab-kid:,zerossl-eab-hmac-secret:,godaddy-key:,godaddy-secret:,route53-profile:,route53-zone-id:,cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -365,6 +366,10 @@ while true; do
     --cache)
         CACHE=$2
         shift 2
+        ;;
+    --use-k3s)
+        USE_K3S=true
+        shift 1
         ;;
     --ha-cluster)
         HA_CLUSTER=true
@@ -670,19 +675,19 @@ if [ "${SEED_ARCH}" = "amd64" ]; then
         SEED_IMAGE="${OVERRIDE_SEED_IMAGE}"
     fi
 
-    if [ ! -z "${OVERRIDE_CONTROL_PLANE_MACHINE}" ]; then
+    if [ -n "${OVERRIDE_CONTROL_PLANE_MACHINE}" ]; then
         CONTROL_PLANE_MACHINE="${OVERRIDE_CONTROL_PLANE_MACHINE}"
     fi
 
-    if [ ! -z "${OVERRIDE_WORKER_NODE_MACHINE}" ]; then
+    if [ -n "${OVERRIDE_WORKER_NODE_MACHINE}" ]; then
         WORKER_NODE_MACHINE="${OVERRIDE_WORKER_NODE_MACHINE}"
     fi
 
-    if [ ! -z "${OVERRIDE_AUTOSCALE_MACHINE}" ]; then
+    if [ -n "${OVERRIDE_AUTOSCALE_MACHINE}" ]; then
         AUTOSCALE_MACHINE="${OVERRIDE_AUTOSCALE_MACHINE}"
     fi
 
-    if [ ! -z "${OVERRIDE_NGINX_MACHINE}" ]; then
+    if [ -n "${OVERRIDE_NGINX_MACHINE}" ]; then
         NGINX_MACHINE="${OVERRIDE_NGINX_MACHINE}"
     fi
 elif [ "${SEED_ARCH}" = "arm64" ]; then
@@ -692,28 +697,39 @@ elif [ "${SEED_ARCH}" = "arm64" ]; then
         SEED_IMAGE="${OVERRIDE_SEED_IMAGE}"
     fi
 
-    if [ ! -z "${OVERRIDE_CONTROL_PLANE_MACHINE}" ]; then
+    if [ -n "${OVERRIDE_CONTROL_PLANE_MACHINE}" ]; then
         CONTROL_PLANE_MACHINE="${OVERRIDE_CONTROL_PLANE_MACHINE}"
     fi
 
-    if [ ! -z "${OVERRIDE_WORKER_NODE_MACHINE}" ]; then
+    if [ -n "${OVERRIDE_WORKER_NODE_MACHINE}" ]; then
         WORKER_NODE_MACHINE="${OVERRIDE_WORKER_NODE_MACHINE}"
     fi
 
-    if [ ! -z "${OVERRIDE_AUTOSCALE_MACHINE}" ]; then
+    if [ -n "${OVERRIDE_AUTOSCALE_MACHINE}" ]; then
         AUTOSCALE_MACHINE="${OVERRIDE_AUTOSCALE_MACHINE}"
     fi
 
-    if [ ! -z "${OVERRIDE_AUTOSCALE_MACHINE}" ]; then
+    if [ -n "${OVERRIDE_AUTOSCALE_MACHINE}" ]; then
         AUTOSCALE_MACHINE="${OVERRIDE_AUTOSCALE_MACHINE}"
     fi
 
-    if [ ! -z "${OVERRIDE_NGINX_MACHINE}" ]; then
+    if [ -n "${OVERRIDE_NGINX_MACHINE}" ]; then
         NGINX_MACHINE="${OVERRIDE_NGINX_MACHINE}"
     fi
 else
     echo_red "Unsupported architecture: ${SEED_ARCH}"
     exit -1
+fi
+
+if [ "${GRPC_PROVIDER}" != "grpc" ] && [ "${GRPC_PROVIDER}" != "externalgrpc" ]; then
+    echo_red_bold "Unsupported cloud provider: ${GRPC_PROVIDER}, only grpc|externalgrpc, exit"
+    exit
+fi
+
+if [ ${USE_K3S} ]; then
+    K3S_CHANNEL=$(curl -s https://update.k3s.io/v1-release/channels)
+    IFS=. read K8S_VERSION K8S_MAJOR K8S_MINOR <<< "${KUBERNETES_VERSION}"
+    KUBERNETES_VERSION=$(curl -s https://update.k3s.io/v1-release/channels | jq -r --arg KUBERNETES_VERSION "${K8S_VERSION}.${K8S_MAJOR}" '.data[]|select(.id == $KUBERNETES_VERSION)|.latest')
 fi
 
 if [ -z ${TARGET_IMAGE} ]; then
@@ -724,7 +740,11 @@ if [ -z ${TARGET_IMAGE} ]; then
         exit
     fi
 
-    TARGET_IMAGE="${ROOT_IMG_NAME}-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${CONTAINER_ENGINE}-${SEED_ARCH}"
+    if [ ${USE_K3S} ]; then
+        TARGET_IMAGE=$(echo -n "${ROOT_IMG_NAME}-k3s-${KUBERNETES_VERSION}-${SEED_ARCH}" | tr '+' '-')
+    else
+        TARGET_IMAGE="${ROOT_IMG_NAME}-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${CONTAINER_ENGINE}-${SEED_ARCH}"
+    fi
 fi
 
 MACHINES_TYPES=$(jq --argjson VOLUME_SIZE ${VOLUME_SIZE} --arg VOLUME_TYPE ${VOLUME_TYPE} 'with_entries(.value += {"diskType": $VOLUME_TYPE, "diskSize": $VOLUME_SIZE})' templates/machines/${SEED_ARCH}.json)
@@ -795,7 +815,7 @@ if [ -z ${WORKER_INSTANCE_PROFILE_ARN} ]; then
 fi
 
 # Grab domain name from route53
-if [ ! -z "${AWS_ROUTE53_ZONE_ID}" ]; then
+if [ -n "${AWS_ROUTE53_ZONE_ID}" ]; then
     ROUTE53_ZONE_NAME=$(aws route53 get-hosted-zone --id  ${AWS_ROUTE53_ZONE_ID} --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} 2>/dev/null| jq -r '.HostedZone.Name // ""')
 
     if [ -z "${ROUTE53_ZONE_NAME}" ]; then
@@ -813,7 +833,7 @@ if [ -z "${PRIVATE_DOMAIN_NAME}" ]; then
         exit 1
     fi
 
-    if [ ! -z "${ROUTE53_ZONE_NAME}" ]; then
+    if [ -n "${ROUTE53_ZONE_NAME}" ]; then
         echo_blue_bold "PRIVATE_DOMAIN_NAME will be set to ${ROUTE53_ZONE_NAME}"
         PRIVATE_DOMAIN_NAME=${ROUTE53_ZONE_NAME}
     else
@@ -980,6 +1000,7 @@ if [ -z "${TARGET_IMAGE_AMI}" ]; then
     fi
 
     ./bin/create-image.sh \
+        --use-k3s=${USE_K3S} \
         --profile="${AWS_PROFILE}" \
         --region="${AWS_REGION}" \
         --cni-plugin-version="${CNI_PLUGIN_VERSION}" \
@@ -1023,7 +1044,7 @@ if [ -z "${TARGET_IMAGE_AMI}" ]; then
 fi
 
 if [ "${RESUME}" = "NO" ]; then
-    if [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
+    if [ -n "${PUBLIC_DOMAIN_NAME}" ]; then
         export AWS_ROUTE53_PUBLIC_ZONE_ID=$(aws route53 list-hosted-zones-by-name --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --dns-name ${PUBLIC_DOMAIN_NAME} | jq --arg DNSNAME "${PUBLIC_DOMAIN_NAME}." -r '.HostedZones[]|select(.Name == $DNSNAME)|.Id//""' | sed -E 's/\/hostedzone\/(\w+)/\1/')
         if [ -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
             echo_red_bold "No Route53 for PUBLIC_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME}"
@@ -1111,6 +1132,8 @@ export ZEROSSL_EAB_HMAC_SECRET=${ZEROSSL_EAB_HMAC_SECRET}
 export GODADDY_API_KEY=${GODADDY_API_KEY}
 export GODADDY_API_SECRET=${GODADDY_API_SECRET}
 export GRPC_PROVIDER=${GRPC_PROVIDER}
+export USE_K3S=${USE_K3S}
+export DOMAIN_NAME=${DOMAIN_NAME}
 EOF
 else
     source ${TARGET_CONFIG_LOCATION}/buildenv
@@ -1433,18 +1456,18 @@ EOF
 EOF
 )
         # Record kubernetes node in Route53 DNS
-        if [ ! -z "${AWS_ROUTE53_ZONE_ID}" ]; then
+        if [ -n "${AWS_ROUTE53_ZONE_ID}" ]; then
 
             echo ${ROUTE53_ENTRY} | jq --arg HOSTNAME "${MASTERKUBE_NODE}.${PRIVATE_DOMAIN_NAME}" '.Changes[0].ResourceRecordSet.Name = $HOSTNAME' >  ${TARGET_CONFIG_LOCATION}/dns-private-${SUFFIX}.json
 
             aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_ZONE_ID} \
                 --change-batch file://${TARGET_CONFIG_LOCATION}/dns-private-${SUFFIX}.json > /dev/null
 
-        elif [ ${INDEX} -ge ${CONTROLNODE_INDEX} ] && [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
+        elif [ ${INDEX} -ge ${CONTROLNODE_INDEX} ] && [ -n "${PUBLIC_DOMAIN_NAME}" ]; then
 
             # Register node in public zone DNS if we don't use private DNS
 
-            if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
+            if [ -n "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
 
                 # Register kubernetes nodes in route53
                 echo ${ROUTE53_ENTRY} | jq --arg HOSTNAME "${MASTERKUBE_NODE}.${PUBLIC_DOMAIN_NAME}" '.Changes[0].ResourceRecordSet.Name = $HOSTNAME' > ${TARGET_CONFIG_LOCATION}/dns-public-${SUFFIX}.json
@@ -1452,7 +1475,7 @@ EOF
                     --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
                     --change-batch file://${TARGET_CONFIG_LOCATION}/dns-public-${SUFFIX}.json > /dev/null
 
-            elif [ ! -z ${GODADDY_API_KEY} ]; then
+            elif [ -n ${GODADDY_API_KEY} ]; then
 
                 # Register kubernetes nodes in godaddy if we don't use route53
                 curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/A/${MASTERKUBE_NODE}" \
@@ -1516,7 +1539,7 @@ function register_nlb_dns() {
     local PRIVATE_NLB_DNS=$1
     local PUBLIC_NLB_DNS=$2
 
-    if [ ! -z ${AWS_ROUTE53_ZONE_ID} ]; then
+    if [ -n ${AWS_ROUTE53_ZONE_ID} ]; then
         echo_title "Register dns ${MASTERKUBE} in route53: ${AWS_ROUTE53_ZONE_ID}"
 
         cat > ${TARGET_CONFIG_LOCATION}/dns-nlb.json <<EOF
@@ -1545,8 +1568,8 @@ EOF
 
     fi
 
-    if [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
-        if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
+    if [ -n "${PUBLIC_DOMAIN_NAME}" ]; then
+        if [ -n "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
             echo_title "Register public dns ${MASTERKUBE} in route53: ${AWS_ROUTE53_PUBLIC_ZONE_ID}"
 
             cat > ${TARGET_CONFIG_LOCATION}/dns-public.json <<EOF
@@ -1573,7 +1596,7 @@ EOF
             aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
                 --change-batch file://${TARGET_CONFIG_LOCATION}/dns-public.json > /dev/null
 
-        elif [ ! -z "${GODADDY_API_KEY}" ]; then
+        elif [ -n "${GODADDY_API_KEY}" ]; then
             curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/CNAME/${MASTERKUBE}" \
                 -H "Authorization: sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}" \
                 -H "Content-Type: application/json" \
@@ -1700,6 +1723,7 @@ function start_kubernes_on_instances() {
                     eval scp ${SCP_OPTIONS} ${TARGET_CLUSTER_LOCATION}/*  ${SEED_USER}@${IPADDR}:~/cluster ${SILENT}
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo join-cluster.sh \
+                        --use-k3s=${USE_K3S} \
                         --join-master=${MASTER_IP} \
                         --cloud-provider=${CLOUD_PROVIDER} \
                         --use-external-etcd=${EXTERNAL_ETCD} \
@@ -1718,6 +1742,7 @@ function start_kubernes_on_instances() {
                     fi
 
                     ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo create-cluster.sh \
+                        --use-k3s=${USE_K3S} \
                         --max-pods=${MAX_PODS} \
                         --ecr-password=${ECR_PASSWORD} \
                         --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
@@ -1732,6 +1757,7 @@ function start_kubernes_on_instances() {
                         --cloud-provider=${CLOUD_PROVIDER} \
                         --cluster-nodes="${CLUSTER_NODES}" \
                         --control-plane-endpoint="${CONTROL_PLANE_ENDPOINT}" \
+                        --etcd-endpoint="${ETCD_ENDPOINT}" \
                         --ha-cluster=true \
                         --cni-plugin="${CNI_PLUGIN}" \
                         --kubernetes-version="${KUBERNETES_VERSION}" ${SILENT}
@@ -1750,6 +1776,7 @@ function start_kubernes_on_instances() {
                     eval scp ${SCP_OPTIONS} ${TARGET_CLUSTER_LOCATION}/*  ${SEED_USER}@${IPADDR}:~/cluster ${SILENT}
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo join-cluster.sh \
+                        --use-k3s=${USE_K3S} \
                         --join-master=${MASTER_IP} \
                         --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
                         --control-plane=true \
@@ -1782,6 +1809,7 @@ function start_kubernes_on_instances() {
                     fi
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo create-cluster.sh \
+                        --use-k3s=${USE_K3S} \
                         --max-pods=${MAX_PODS} \
                         --ecr-password=${ECR_PASSWORD} \
                         --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
@@ -1792,6 +1820,7 @@ function start_kubernes_on_instances() {
                         --cloud-provider=${CLOUD_PROVIDER} \
                         --cluster-nodes="${CLUSTER_NODES}" \
                         --control-plane-endpoint="${CONTROL_PLANE_ENDPOINT}" \
+                        --etcd-endpoint="${ETCD_ENDPOINT}" \
                         --node-group=${NODEGROUP_NAME} \
                         --node-index=${NODEINDEX} \
                         --cni-plugin="${CNI_PLUGIN}" \
@@ -1808,6 +1837,7 @@ function start_kubernes_on_instances() {
                     eval scp ${SCP_OPTIONS} ${TARGET_CLUSTER_LOCATION}/*  ${SEED_USER}@${IPADDR}:~/cluster ${SILENT}
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo join-cluster.sh \
+                        --use-k3s=${USE_K3S} \
                         --join-master=${MASTER_IP} \
                         --control-plane=false \
                         --cloud-provider=${CLOUD_PROVIDER} \
@@ -2050,7 +2080,7 @@ done
 
 if [ "${USE_NLB}" = "NO" ] || [ "${HA_CLUSTER}" = "false" ]; then
     # Register in Route53 IP addresses point in private IP
-    if [ ! -z ${AWS_ROUTE53_ZONE_ID} ]; then
+    if [ -n ${AWS_ROUTE53_ZONE_ID} ]; then
         echo ${PRIVATE_ROUTE53_REGISTER} | jq . > ${TARGET_CONFIG_LOCATION}/dns-nlb.json
         aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
             --hosted-zone-id ${AWS_ROUTE53_ZONE_ID} \
@@ -2058,8 +2088,8 @@ if [ "${USE_NLB}" = "NO" ] || [ "${HA_CLUSTER}" = "false" ]; then
 
     fi
 
-    if [ ! -z "${PUBLIC_DOMAIN_NAME}" ]; then
-        if [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
+    if [ -n "${PUBLIC_DOMAIN_NAME}" ]; then
+        if [ -n "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
         
             # Register in Route53 IP addresses point in public IP
             echo ${PUBLIC_ROUTE53_REGISTER} | jq --arg HOSTNAME "${MASTERKUBE}.${PUBLIC_DOMAIN_NAME}" '.Changes[0].ResourceRecordSet.Name = $HOSTNAME' > ${TARGET_CONFIG_LOCATION}/dns-public.json
@@ -2067,7 +2097,7 @@ if [ "${USE_NLB}" = "NO" ] || [ "${HA_CLUSTER}" = "false" ]; then
                 --hosted-zone-id ${AWS_ROUTE53_PUBLIC_ZONE_ID} \
                 --change-batch file://${TARGET_CONFIG_LOCATION}/dns-public.json > /dev/null
 
-        elif [ ! -z ${GODADDY_API_KEY} ]; then
+        elif [ -n ${GODADDY_API_KEY} ]; then
 
             # Register in godaddy IP addresses point in public IP
             curl -s -X PUT "https://api.godaddy.com/v1/domains/${PUBLIC_DOMAIN_NAME}/records/A/${MASTERKUBE}" \
@@ -2081,6 +2111,7 @@ fi
 
 CLUSTER_NODES=
 CONTROLPLANE_INSTANCEID_NLB_TARGET=
+ETCD_ENDPOINT=
 
 sed -i -e '/CLUSTER_NODES/d' -e '/NLB_DNS/d' -e '/MASTER_NODES/d' ${TARGET_CONFIG_LOCATION}/buildenv
 
@@ -2108,6 +2139,14 @@ if [ "${HA_CLUSTER}" = "true" ]; then
         else
             CLUSTER_NODES="${CLUSTER_NODES},${NODE_DNS},${PRIVATEDNS}"
             MASTER_NODES="${MASTER_NODES},${NODE_DNS}"
+        fi
+
+        if [ "$EXTERNAL_ETCD" = "true" ]; then
+            if [ -z "${ETCD_ENDPOINT}" ]; then
+                ETCD_ENDPOINT="https://${IPADDR}:2379"
+            else
+                ETCD_ENDPOINT="${ETCD_ENDPOINT},https://${IPADDR}:2379"
+            fi
         fi
 
         if [ -z ${CONTROLPLANE_INSTANCEID_NLB_TARGET} ]; then
@@ -2203,6 +2242,7 @@ fi
 AUTOSCALER_CONFIG=$(cat <<EOF
 {
     "use-external-etcd": ${EXTERNAL_ETCD},
+    "use-k3s": ${USE_K3S},
     "src-etcd-ssl-dir": "/etc/etcd/ssl",
     "dst-etcd-ssl-dir": "${ETCD_DST_DIR}",
     "kubernetes-pki-srcdir": "/etc/kubernetes/pki",
@@ -2234,6 +2274,11 @@ AUTOSCALER_CONFIG=$(cat <<EOF
         "ca": "sha256:${CACERT}",
         "extras-args": [
             "--ignore-preflight-errors=All"
+        ]
+    },
+    "k3s": {
+        "datastore-endpoint": "${ETCD_ENDPOINT}",
+        "extras-commands": [
         ]
     },
     "default-machine": "${AUTOSCALE_MACHINE}",

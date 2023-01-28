@@ -8,7 +8,7 @@ export KUBERNETES_TEMPLATE=./templates/external-dns
 
 mkdir -p $ETC_DIR
 
-if [ -z "${PUBLIC_DOMAIN_NAME}" ] || [ ! -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
+if [ -z "${PUBLIC_DOMAIN_NAME}" ] || [ -n "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
 
     cat > ${ETC_DIR}/credentials <<EOF
 [default]
@@ -32,7 +32,7 @@ EOF
         -e "s/__DOMAIN_NAME__/${DOMAIN_NAME}/g" \
         $KUBERNETES_TEMPLATE/deploy-route53.yaml | tee $ETC_DIR/deploy.yaml | kubectl apply -f - --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
 
-elif [ ! -z "${GODADDY_API_KEY}" ]; then
+elif [ -n "${GODADDY_API_KEY}" ]; then
 
     sed -e "s/__DOMAIN_NAME__/$DOMAIN_NAME/g" \
         -e "s/__GODADDY_API_KEY__/$GODADDY_API_KEY/g" \

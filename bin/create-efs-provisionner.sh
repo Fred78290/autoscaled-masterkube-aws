@@ -1,7 +1,7 @@
 #!/bin/bash
 export ETC_DIR=${TARGET_DEPLOY_LOCATION}/aws-efs-provisioner
 
-if [ ! -z "${AWS_EFS_DOMAIN}" ]; then
+if [ -n "${AWS_EFS_DOMAIN}" ]; then
     IFS=. read -a EFSID <<< "${AWS_EFS_DOMAIN}"
 
     mkdir -p ${ETC_DIR}

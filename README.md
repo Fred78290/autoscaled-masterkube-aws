@@ -1,12 +1,12 @@
 # Introduction
 
-This project contains everthing to create an single plane or HA autoscaling kubernetes cluster on AWS cloud. The build process use **kubeadm**.
+This project contains everthing to create an single plane or HA autoscaling kubernetes cluster on AWS cloud using **kubeadm** or **k3s**.
 
 It's an EKS or Kops alternative.
 
-The cluster support also autoscaling by using [kubernetes-aws-autoscaler](https://github.com/Fred78290/kubernetes-aws-autoscaler) and [grpc autoscaler](https://github.com/Fred78290/autoscaler)
+The cluster support also autoscaling by using [kubernetes-aws-autoscaler](https://github.com/Fred78290/kubernetes-aws-autoscaler) and [grpc autoscaler](https://github.com/Fred78290/autoscaler) or **vanilla autoscaler**
 
-If you allow the cluster to be visible on internet, the process will use GODADDY or Route53 to register public FCQN.
+If you allow the cluster to be visible on internet, the process will use **GODADDY** or **Route53** to register public FCQN.
 
 Route53 public zone and private zone could be also used or both depending the name of your public domain name or private domaine name
 
@@ -49,7 +49,7 @@ Ensure that you have sudo right
 
 You must also install the following tools
 
-|Linux|MacOS|
+|**Linux**|**MacOS**|
 | --- | --- |
 |kubectl|kubectl|
 |aws cli|aws cli|
@@ -153,6 +153,7 @@ During the process the script will create many files located in
 | `--route53-profile` | Specify AWS profile for route53 | $AWS_PROFILE_ROUTE53 env vars |
 | `--region` | AWS Region to deploy  | $AWS_REGION env vars |
 | **Flag to design the kubernetes cluster** |
+| `--use-k3s` | Use k3s in place of kubeadm | NO |
 | `-c\|--ha-cluster` | Allow to create an HA cluster with 3 control planes | NO |
 | `--worker-nodes` | Specify the number of worker node created in the cluster. | 3 |
 | `--container-runtime` | Specify which OCI runtime to use. [**docker**\|**containerd**\|**cri-o**]| containerd |
@@ -209,6 +210,7 @@ During the process the script will create many files located in
 | `--seed-user=<value>` | The cloud-init user name | ubuntu |
 | `--arch=<value>`| Specify the architecture of VM (amd64\|arm64) | amd64 |
 | **Flags for autoscaler** |
+| `--cloudprovider=<value>` | autoscaler flag <grpc|externalgrpc>.|externalgrpc|
 | `--max-nodes-total=<value>` | Maximum number of nodes in all node groups. Cluster autoscaler will not grow the cluster beyond this number. | 5 |
 | `--cores-total=<value>` | Minimum and maximum number of cores in cluster, in the format < min >:< max >. Cluster autoscaler will not scale the cluster beyond these numbers. | 0:16 |
 | `--memory-total=<value>` | Minimum and maximum number of gigabytes of memory in cluster, in the format < min >:< max >. Cluster autoscaler will not scale the cluster beyond these numbers. | 0:24 |

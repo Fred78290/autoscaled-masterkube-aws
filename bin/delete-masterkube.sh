@@ -117,7 +117,7 @@ if [ "$FORCE" = "YES" ]; then
         INSTANCE=$(aws ec2  describe-instances --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters "Name=tag:Name,Values=$MASTERKUBE_NODE" | jq -r '.Reservations[].Instances[]|select(.State.Code == 16)')
         INSTANCE_ID=$(echo $INSTANCE | jq -r '.InstanceId // ""')
 
-        if [ ! -z "$INSTANCE_ID" ]; then
+        if [ -n "$INSTANCE_ID" ]; then
             echo_blue_bold "Delete VM: $MASTERKUBE_NODE"
             delete_instance_id "${INSTANCE_ID}" &
         fi
@@ -136,7 +136,7 @@ elif [ -f ${TARGET_CLUSTER_LOCATION}/config ]; then
     INSTANCE=$(aws ec2  describe-instances --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters "Name=tag:Name,Values=$MASTERKUBE" | jq -r '.Reservations[].Instances[]|select(.State.Code == 16)')
     INSTANCE_ID=$(echo $INSTANCE | jq -r '.InstanceId // ""')
 
-    if [ ! -z "$INSTANCE_ID" ]; then
+    if [ -n "$INSTANCE_ID" ]; then
         echo_blue_bold "Delete simple Instance ID: $INSTANCE_ID"
         delete_instance_id "${INSTANCE_ID}" &
     fi
@@ -150,7 +150,7 @@ do
         INSTANCE=$(cat $FILE)
         INSTANCE_ID=$(echo $INSTANCE | jq -r '.InstanceId // ""')
 
-        if [ ! -z "$INSTANCE_ID" ]; then
+        if [ -n "$INSTANCE_ID" ]; then
             STATUSCODE=$(aws ec2  describe-instances --profile ${AWS_PROFILE} --region ${AWS_REGION} --instance-ids "${INSTANCE_ID}" | jq -r '.Reservations[0].Instances[0].State.Code//"48"')
 
             if [ ${STATUSCODE} -eq 16 ]; then
@@ -197,7 +197,7 @@ do
     fi
 done
 
-if [ ! -z "${GODADDY_API_KEY}" ] && [ ! -z "${PUBLIC_DOMAIN_NAME}" ] && [ -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
+if [ -n "${GODADDY_API_KEY}" ] && [ -n "${PUBLIC_DOMAIN_NAME}" ] && [ -z "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
     echo_blue_bold "Delete DNS ${MASTERKUBE} in godaddy"
 
     if [ "${USE_NLB}" = "YES" ]; then
