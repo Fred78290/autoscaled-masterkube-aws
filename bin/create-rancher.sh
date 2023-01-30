@@ -58,7 +58,7 @@ done
 echo
 
 echo_title "Rancher setup URL"
-echo_blue_bold "https://rancher-aws.aldunelabs.fr/dashboard/?setup=${BOOTSTRAP_SECRET}"
+echo_blue_bold "https://rancher-aws.$DOMAIN_NAME/dashboard/?setup=${BOOTSTRAP_SECRET}"
 echo_line
 echo
 
