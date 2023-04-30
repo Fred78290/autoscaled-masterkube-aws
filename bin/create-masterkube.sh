@@ -974,13 +974,19 @@ if [ "${DOMAIN_NAME}" != "${PRIVATE_DOMAIN_NAME}" ] && [ "${DOMAIN_NAME}" != "${
 fi
 
 # ACM Keep the wildcard
-export ACM_CERTIFICATE_ARN=$(aws acm list-certificates --profile ${AWS_PROFILE} --region ${AWS_REGION} \
+export ACM_CERTIFICATE_ARN=$(aws acm list-certificates --profile ${AWS_PROFILE} --region ${AWS_REGION} --include keyTypes=RSA_1024,RSA_2048,EC_secp384r1,EC_prime256v1,EC_secp521r1,RSA_3072,RSA_4096 \
     | jq -r --arg DOMAIN_NAME "${ACM_DOMAIN_NAME}" '.CertificateSummaryList[]|select(.DomainName == $DOMAIN_NAME)|.CertificateArn // ""')
 
-if [ "x${ACM_CERTIFICATE_ARN}" = "x" ]; then
-    ACM_CERTIFICATE_ARN=$(aws acm import-certificate --profile ${AWS_PROFILE} --region ${AWS_REGION} --tags "Key=Name,Value=${CERT_DOMAIN}" \
-        --certificate fileb://${SSL_LOCATION}/cert.pem --private-key fileb://${SSL_LOCATION}/privkey.pem | jq -r '.CertificateArn // ""')
+if [ -n "${ACM_CERTIFICATE_ARN}" ]; then
+	ACM_CERTIFICATE_ARN="--certificate-arn=${ACM_CERTIFICATE_ARN}"
+else
+	ACM_CERTIFICATE_TAGGING="--tags Key=Name,Value=${ACM_DOMAIN_NAME}"
 fi
+
+ACM_CERTIFICATE_ARN=$(aws acm import-certificate ${ACM_CERTIFICATE_ARN} ${ACM_CERTIFICATE_TAGGING} \
+		--profile ${AWS_PROFILE} --region ${AWS_REGION} \
+        --certificate fileb://${SSL_LOCATION}/cert.pem \
+		--private-key fileb://${SSL_LOCATION}/privkey.pem | jq -r '.CertificateArn // ""')
 
 if [ -z "${ACM_CERTIFICATE_ARN}" ]; then
     echo_red "ACM_CERTIFICATE_ARN is empty after creation, something goes wrong"
