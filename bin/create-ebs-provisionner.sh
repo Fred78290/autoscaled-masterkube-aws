@@ -19,6 +19,9 @@ if [ $CLOUD_PROVIDER = "external" ]; then
       26)
           AWS_CONTROLLER_VERSION=v1.26.0
           ;;
+      27)
+          AWS_CONTROLLER_VERSION=v1.27.1
+          ;;
   esac
 
 
