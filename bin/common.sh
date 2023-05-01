@@ -1,33 +1,4 @@
 
-if [ "$(uname -s)" == "Darwin" ]; then
-
-    if [ -z "$(command -v cfssl)" ]; then
-        echo_red_bold "You must install gnu cfssl with brew (brew install cfssl)"
-        exit 1
-    fi
-
-    if [ -z "$(command -v gsed)" ]; then
-        echo_red_bold "You must install gnu sed with brew (brew install gsed), this script is not compatible with the native macos sed"
-        exit 1
-    fi
-
-    if [ -z "$(command -v gbase64)" ]; then
-        echo_red_bold "You must install gnu base64 with brew (brew install coreutils), this script is not compatible with the native macos base64"
-        exit 1
-    fi
-
-    if [ ! -e /usr/local/opt/gnu-getopt/bin/getopt ]; then
-        echo_red_bold "You must install gnu gnu-getopt with brew (brew install coreutils), this script is not compatible with the native macos base64"
-        exit 1
-    fi
-
-    shopt -s expand_aliases
-
-    alias base64=gbase64
-    alias sed=gsed
-    alias getopt=/usr/local/opt/gnu-getopt/bin/getopt
-fi
-
 function verbose() {
     if [ ${VERBOSE} = "YES" ]; then
         eval "$1"
@@ -85,3 +56,32 @@ function echo_separator() {
 function echo_line() {
 	echo_grey "============================================================================================================================="
 }
+
+if [ "$(uname -s)" == "Darwin" ]; then
+
+    if [ -z "$(command -v cfssl)" ]; then
+        echo_red_bold "You must install gnu cfssl with brew (brew install cfssl)"
+        exit 1
+    fi
+
+    if [ -z "$(command -v gsed)" ]; then
+        echo_red_bold "You must install gnu sed with brew (brew install gsed), this script is not compatible with the native macos sed"
+        exit 1
+    fi
+
+    if [ -z "$(command -v gbase64)" ]; then
+        echo_red_bold "You must install gnu base64 with brew (brew install coreutils), this script is not compatible with the native macos base64"
+        exit 1
+    fi
+
+    if [ ! -e /usr/local/opt/gnu-getopt/bin/getopt ]; then
+        echo_red_bold "You must install gnu gnu-getopt with brew (brew install coreutils), this script is not compatible with the native macos base64"
+        exit 1
+    fi
+
+    shopt -s expand_aliases
+
+    alias base64=gbase64
+    alias sed=gsed
+    alias getopt=/usr/local/opt/gnu-getopt/bin/getopt
+fi
