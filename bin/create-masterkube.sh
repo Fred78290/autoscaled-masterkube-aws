@@ -1094,9 +1094,7 @@ if [ "${RESUME}" = "NO" ]; then
         fi
     fi
 
-    cat ${AWSDEFS} > ${TARGET_CONFIG_LOCATION}/buildenv
-
-    sed -i -e '/MASTER_INSTANCE_PROFILE_ARN/d' -e '/WORKER_INSTANCE_PROFILE_ARN/d' ${TARGET_CONFIG_LOCATION}/buildenv
+    EVAL=$(cat ${AWSDEFS} | sed -e '/MASTER_INSTANCE_PROFILE_ARN/d' -e '/WORKER_INSTANCE_PROFILE_ARN/d' > ${TARGET_CONFIG_LOCATION}/buildenv)
 
     cat >> ${TARGET_CONFIG_LOCATION}/buildenv <<EOF
 ### Env to build cluster
@@ -1176,7 +1174,7 @@ else
     source ${TARGET_CONFIG_LOCATION}/buildenv
 fi
 
-sed -i '/NODE_INDEX/d' ${TARGET_CONFIG_LOCATION}/buildenv
+EVAL=$(sed -i '/NODE_INDEX/d' ${TARGET_CONFIG_LOCATION}/buildenv)
 
 if [ ${WORKERNODES} -eq 0 ]; then
     MASTER_NODE_ALLOW_DEPLOYMENT=YES
@@ -2150,7 +2148,7 @@ CLUSTER_NODES=
 CONTROLPLANE_INSTANCEID_NLB_TARGET=
 ETCD_ENDPOINT=
 
-sed -i -e '/CLUSTER_NODES/d' -e '/NLB_DNS/d' -e '/MASTER_NODES/d' ${TARGET_CONFIG_LOCATION}/buildenv
+EVAL=$(sed -i -e '/CLUSTER_NODES/d' -e '/NLB_DNS/d' -e '/MASTER_NODES/d' ${TARGET_CONFIG_LOCATION}/buildenv)
 
 CONTROL_PLANE_ENDPOINT=${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}
 
