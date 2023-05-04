@@ -192,7 +192,7 @@ During the process the script will create many files located in
 | `--autoscale-machine=<value>` | Override machine type used for auto scaling. |t3a.medium/t4g.medium|
 | `--nginx-machine=<value>` | The instance type name to deploy front nginx node | t3a.small/t4g.small |
 | `--ssh-private-key=<value>`  | Alternate ssh key file |~/.ssh/id_rsa|
-| `--transport=<value>`  | Override the transport to be used between autoscaler and vmware-autoscaler [**tcp**\|**linux**] |linux|
+| `--transport=<value>`  | Override the transport to be used between autoscaler and aws-autoscaler [**tcp**\|**linux**] |linux|
 | `--cloud-provider=<value>`  | Set cloud provider, (aws | external | none) | external |
 | `--node-group=<value>` | The name of kubernetes node group  | aws-ca-k8s |
 | `--cni-plugin-version=<value>`  | CNI version |v1.1.1|
