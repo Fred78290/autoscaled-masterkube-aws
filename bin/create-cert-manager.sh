@@ -52,7 +52,8 @@ esac
 
 mkdir -p $ETC_DIR
 
-kubectl --kubeconfig=${TARGET_CLUSTER_LOCATION}/config create namespace $K8NAMESPACE
+kubectl create namespace $K8NAMESPACE --dry-run=client -o yaml \
+    --kubeconfig=${TARGET_CLUSTER_LOCATION}/config | kubectl apply --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -f -
 
 helm repo add jetstack https://charts.jetstack.io
 helm repo add godaddy-webhook https://fred78290.github.io/cert-manager-webhook-godaddy/
