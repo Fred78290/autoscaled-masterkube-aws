@@ -773,6 +773,14 @@ MACHINES_TYPES=$(jq --argjson VOLUME_SIZE ${VOLUME_SIZE} --arg VOLUME_TYPE ${VOL
 export SSH_KEY_FNAME="$(basename ${SSH_PRIVATE_KEY})"
 export SSH_PUBLIC_KEY="${SSH_PRIVATE_KEY}.pub"
 
+if [ "${EXTERNAL_ETCD}" = "true" ]; then
+    export EXTERNAL_ETCD_ARGS="--use-external-etcd"
+    ETCD_DST_DIR="/etc/etcd/ssl"
+else
+    export EXTERNAL_ETCD_ARGS="--no-use-external-etcd"
+    ETCD_DST_DIR="/etc/kubernetes/pki/etcd"
+fi
+
 # Check if we can resume the creation process
 if [ "${DELETE_CLUSTER}" = "YES" ]; then
     delete-masterkube.sh --configuration-location=${CONFIGURATION_LOCATION} --aws-defs=${AWSDEFS} --node-group=${NODEGROUP_NAME}
@@ -2262,20 +2270,12 @@ if [ ${GRPC_PROVIDER} = "grpc" ]; then
     cat > ${TARGET_CONFIG_LOCATION}/${CLOUDPROVIDER_CONFIG} <<EOF
     {
         "address": "$CONNECTTO",
-        "secret": "vmware",
+        "secret": "aws",
         "timeout": 300
     }
 EOF
 else
     echo "address: $CONNECTTO" > ${TARGET_CONFIG_LOCATION}/${CLOUDPROVIDER_CONFIG}
-fi
-
-if [ "${EXTERNAL_ETCD}" = "true" ]; then
-    export EXTERNAL_ETCD_ARGS="--use-external-etcd"
-    ETCD_DST_DIR="/etc/etcd/ssl"
-else
-    export EXTERNAL_ETCD_ARGS="--no-use-external-etcd"
-    ETCD_DST_DIR="/etc/kubernetes/pki/etcd"
 fi
 
 AUTOSCALER_CONFIG=$(cat <<EOF
