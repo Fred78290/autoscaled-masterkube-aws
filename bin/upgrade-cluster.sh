@@ -167,7 +167,7 @@ EOF
 
 AWS_AUTOSCALER_CONFIG=$(cat ${TARGET_CONFIG_LOCATION}/kubernetes-aws-autoscaler.json)
 
-echo -n ${AWS_AUTOSCALER_CONFIG} | jq ".image = \"${TARGET_IMAGE}\" | .aws.\"${NODEGROUP_NAME}\".\"ami\" = \"${TARGET_IMAGE_AMI}\"" > ${TARGET_CONFIG_LOCATION}/kubernetes-vmware-autoscaler.json
+echo -n ${AWS_AUTOSCALER_CONFIG} | jq ".image = \"${TARGET_IMAGE}\" | .aws.\"${NODEGROUP_NAME}\".\"ami\" = \"${TARGET_IMAGE_AMI}\"" > ${TARGET_CONFIG_LOCATION}/kubernetes-aws-autoscaler.json
 
 source ${PWD}/bin/create-deployment.sh
 

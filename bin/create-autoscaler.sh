@@ -75,9 +75,9 @@ elif [ "$LAUNCH_CA" == "LOCAL" ]; then
     GOARCH=$(go env GOARCH)
     nohup ../out/$GOOS/$GOARCH/aws-autoscaler \
         --kubeconfig=$KUBECONFIG \
-        --config=${TARGET_CONFIG_LOCATION}/kubernetes-vmware-autoscaler.json \
-        --save=${TARGET_CONFIG_LOCATION}/vmware-autoscaler-state.json \
-        --log-level=info 1>>${TARGET_CONFIG_LOCATION}/vmware-autoscaler.log 2>&1 &
+        --config=${TARGET_CONFIG_LOCATION}/kubernetes-aws-autoscaler.json \
+        --save=${TARGET_CONFIG_LOCATION}/aws-autoscaler-state.json \
+        --log-level=info 1>>${TARGET_CONFIG_LOCATION}/aws-autoscaler.log 2>&1 &
     pid="$!"
 
     echo -n "$pid" > ${TARGET_CONFIG_LOCATION}/aws-autoscaler.pid
