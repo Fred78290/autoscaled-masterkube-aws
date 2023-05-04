@@ -144,6 +144,7 @@ During the process the script will create many files located in
 | `-r\|--resume` | Allow to resume interrupted creation of cluster kubernetes  | |
 | `--create-image-only`| Create image only and exit ||
 | `--cache=<path>`| Cache location |/.local/aws/cache|
+| `--upgrade`| Upgrade existing cluster to upper version of kubernetes ||
 | **Flags to set some location informations** |
 | `--configuration-location=<path>`| Specify where configuration will be stored  | .|
 | `--ssl-location=<path>`| Specify where the etc/ssl dir is stored  | ./etc/ssl |
@@ -258,3 +259,7 @@ To scale fresh masterkube `kubectl scale --replicas=2 deploy/helloworld -n kube-
 
 To delete the master kube and associated worker nodes, just run the command [delete-masterkube.sh](./bin/delete-masterkube.sh)
 If the create process fail for any reason, you can use flag **--force**
+
+## Upgrade existing cluster
+
+To upgrade cluster with an upper version of kubernetes, just run `create-masterkube.sh --upgrade --kubernetes-version=<upper version>`

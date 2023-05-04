@@ -112,6 +112,8 @@ export LAUNCH_CA=YES
 export PRIVATE_DOMAIN_NAME=
 export PUBLIC_DOMAIN_NAME=
 
+export UPGRADE_CLUSTER=NO
+
 VPC_PUBLIC_SUBNET_IDS=()
 VPC_PRIVATE_SUBNET_IDS=()
 LAUNCHED_INSTANCES=()
@@ -141,6 +143,7 @@ Options are:
 --delete                                         # Delete cluster and exit
 --create-image-only                              # Create image only
 --cache=<path>                                   # Cache location, default ${CACHE}
+--upgrade                                        # Upgrade existing cluster
 
 ### Flags to set some location informations
 
@@ -245,7 +248,7 @@ Options are:
 EOF
 }
 
-TEMP=$(getopt -o hvxr --long use-k3s:,cloudprovider:,use-zerossl,zerossl-eab-kid:,zerossl-eab-hmac-secret:,godaddy-key:,godaddy-secret:,route53-profile:,route53-zone-id:,cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
+TEMP=$(getopt -o hvxr --long upgrade,use-k3s:,cloudprovider:,use-zerossl,zerossl-eab-kid:,zerossl-eab-hmac-secret:,godaddy-key:,godaddy-secret:,route53-profile:,route53-zone-id:,cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -256,6 +259,10 @@ while true; do
         usage
         exit 0
         ;;
+	--upgrade)
+		UPGRADE_CLUSTER=YES
+		shift
+		;;
     -v|--verbose)
         SILENT=
         shift 1
@@ -721,6 +728,11 @@ else
     exit -1
 fi
 
+if [ "${UPGRADE_CLUSTER}" == "YES" ] && [ "${DELETE_CLUSTER}" = "YES" ]; then
+    echo_red_bold "Can't upgrade deleted cluster, exit"
+    exit
+fi
+
 if [ "${GRPC_PROVIDER}" != "grpc" ] && [ "${GRPC_PROVIDER}" != "externalgrpc" ]; then
     echo_red_bold "Unsupported cloud provider: ${GRPC_PROVIDER}, only grpc|externalgrpc, exit"
     exit
@@ -1039,24 +1051,34 @@ if [ "${CREATE_IMAGE_ONLY}" = "YES" ]; then
     exit 0
 fi
 
-# Delete previous existing version
-if [ "${RESUME}" = "NO" ]; then
-    echo_title "Launch custom ${MASTERKUBE} instance with ${TARGET_IMAGE}" > /dev/stderr
-    delete-masterkube.sh --configuration-location=${CONFIGURATION_LOCATION} --aws-defs=${AWSDEFS} --node-group=${NODEGROUP_NAME}
-else
-    echo_title "Resume custom ${MASTERKUBE} instance with ${TARGET_IMAGE}" > /dev/stderr
-fi
-
-mkdir -p ${TARGET_CONFIG_LOCATION}
-mkdir -p ${TARGET_DEPLOY_LOCATION}
-mkdir -p ${TARGET_CLUSTER_LOCATION}
-
 export TARGET_IMAGE_AMI=$(aws ec2 describe-images --profile ${AWS_PROFILE} --region ${AWS_REGION} --filters "Name=name,Values=${TARGET_IMAGE}" | jq -r '.Images[0].ImageId // ""')
+
+if [ ${GRPC_PROVIDER} = "grpc" ]; then
+    export CLOUDPROVIDER_CONFIG=grpc-config.json
+else
+    export CLOUDPROVIDER_CONFIG=grpc-config.yaml
+fi
 
 if [ -z "${TARGET_IMAGE_AMI}" ]; then
     echo_red "AMI ${TARGET_IMAGE} not found"
     exit -1
 fi
+
+# Delete previous existing version
+if [ "$RESUME" = "NO" ] && [ "${UPGRADE_CLUSTER}" == "NO" ]; then
+    echo_title "Launch custom ${MASTERKUBE} instance with ${TARGET_IMAGE}" > /dev/stderr
+    delete-masterkube.sh --configuration-location=${CONFIGURATION_LOCATION} --aws-defs=${AWSDEFS} --node-group=${NODEGROUP_NAME}
+elif [ "${UPGRADE_CLUSTER}" == "NO" ]; then
+    echo_title "Resume custom ${MASTERKUBE} instance with ${TARGET_IMAGE}" > /dev/stderr
+else
+    echo_title "Upgrade ${MASTERKUBE} instance with ${TARGET_IMAGE}"
+	./bin/upgrade-cluster.sh
+	exit
+fi
+
+mkdir -p ${TARGET_CONFIG_LOCATION}
+mkdir -p ${TARGET_DEPLOY_LOCATION}
+mkdir -p ${TARGET_CLUSTER_LOCATION}
 
 if [ "${RESUME}" = "NO" ]; then
     if [ -n "${PUBLIC_DOMAIN_NAME}" ]; then
@@ -1078,39 +1100,42 @@ if [ "${RESUME}" = "NO" ]; then
 
     cat >> ${TARGET_CONFIG_LOCATION}/buildenv <<EOF
 ### Env to build cluster
-export TARGET_CONFIG_LOCATION=${TARGET_CONFIG_LOCATION}
-export TARGET_DEPLOY_LOCATION=${TARGET_DEPLOY_LOCATION}
-export TARGET_CLUSTER_LOCATION=${TARGET_CLUSTER_LOCATION}
-export USE_NGINX_GATEWAY=${USE_NGINX_GATEWAY}
-export PREFER_SSH_PUBLICIP=${PREFER_SSH_PUBLICIP}
+export AUTOSCALE_MACHINE=${AUTOSCALE_MACHINE}
+export AWS_ROUTE53_PUBLIC_ZONE_ID=${AWS_ROUTE53_PUBLIC_ZONE_ID}
+export CERT_DOMAIN=${CERT_DOMAIN}
 export CLOUD_PROVIDER=${CLOUD_PROVIDER}
 export CNI_PLUGIN_VERSION=${CNI_PLUGIN_VERSION}
 export CNI_PLUGIN=${CNI_PLUGIN}
-export CONTROLNODES=${CONTROLNODES}
-export CORESTOTAL="${CORESTOTAL}"
-export AUTOSCALE_MACHINE=${AUTOSCALE_MACHINE}
 export CONTROL_PLANE_MACHINE=${CONTROL_PLANE_MACHINE}
-export WORKER_NODE_MACHINE=${WORKER_NODE_MACHINE}
-export NGINX_MACHINE=${NGINX_MACHINE}
+export CONTROLNODES=${CONTROLNODES}
+export CONTROLPLANE_USE_PUBLICIP=${CONTROLPLANE_USE_PUBLICIP}
+export CORESTOTAL="${CORESTOTAL}"
+export DASHBOARD_HOSTNAME=${DASHBOARD_HOSTNAME}
+export DOMAIN_NAME=${DOMAIN_NAME}
+export EXPOSE_PUBLIC_CLUSTER=${EXPOSE_PUBLIC_CLUSTER}
 export EXTERNAL_ETCD=${EXTERNAL_ETCD}
 export FIRSTNODE_INDEX=${FIRSTNODE_INDEX}
+export GODADDY_API_KEY=${GODADDY_API_KEY}
+export GODADDY_API_SECRET=${GODADDY_API_SECRET}
+export GRPC_PROVIDER=${GRPC_PROVIDER}
 export HA_CLUSTER=${HA_CLUSTER}
 export KUBECONFIG=${KUBECONFIG}
 export KUBERNETES_VERSION=${KUBERNETES_VERSION}
+export MASTER_INSTANCE_PROFILE_ARN=${MASTER_INSTANCE_PROFILE_ARN}
 export MASTER_PROFILE_NAME=${MASTER_PROFILE_NAME}
 export MASTERKUBE=${MASTERKUBE}
-export DASHBOARD_HOSTNAME=${DASHBOARD_HOSTNAME}
 export MAX_PODS=${MAX_PODS}
 export MAXAUTOPROVISIONNEDNODEGROUPCOUNT=${MAXAUTOPROVISIONNEDNODEGROUPCOUNT}
 export MAXNODES=${MAXNODES}
 export MAXTOTALNODES=${MAXTOTALNODES}
 export MEMORYTOTAL="${MEMORYTOTAL}"
 export MINNODES=${MINNODES}
+export NGINX_MACHINE=${NGINX_MACHINE}
 export NODEGROUP_NAME=${NODEGROUP_NAME}
 export OSDISTRO=${OSDISTRO}
-export PUBLIC_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME}
+export PREFER_SSH_PUBLICIP=${PREFER_SSH_PUBLICIP}
 export PRIVATE_DOMAIN_NAME=${PRIVATE_DOMAIN_NAME}
-export CERT_DOMAIN=${CERT_DOMAIN}
+export PUBLIC_DOMAIN_NAME=${PUBLIC_DOMAIN_NAME}
 export REGISTRY=${REGISTRY}
 export SCALEDOWNDELAYAFTERADD=${SCALEDOWNDELAYAFTERADD}
 export SCALEDOWNDELAYAFTERDELETE=${SCALEDOWNDELAYAFTERDELETE}
@@ -1127,28 +1152,25 @@ export SSH_KEYNAME=${SSH_KEYNAME}
 export SSH_PRIVATE_KEY=${SSH_PRIVATE_KEY}
 export SSH_PRIVATE_KEY=${SSH_PRIVATE_KEY}
 export SSH_PUBLIC_KEY=${SSH_PUBLIC_KEY}
+export TARGET_CLUSTER_LOCATION=${TARGET_CLUSTER_LOCATION}
+export TARGET_CONFIG_LOCATION=${TARGET_CONFIG_LOCATION}
+export TARGET_DEPLOY_LOCATION=${TARGET_DEPLOY_LOCATION}
 export TARGET_IMAGE=${TARGET_IMAGE}
 export TRANSPORT=${TRANSPORT}
 export UNREMOVABLENODERECHECKTIMEOUT=${UNREMOVABLENODERECHECKTIMEOUT}
-export USE_NLB=${USE_NLB}
-export VOLUME_TYPE=${VOLUME_TYPE}
-export VOLUME_SIZE=${VOLUME_SIZE}
-export EXPOSE_PUBLIC_CLUSTER=${EXPOSE_PUBLIC_CLUSTER}
-export CONTROLPLANE_USE_PUBLICIP=${CONTROLPLANE_USE_PUBLICIP}
-export WORKERNODE_USE_PUBLICIP=${WORKERNODE_USE_PUBLICIP}
-export WORKER_PROFILE_NAME=${WORKER_PROFILE_NAME}
-export WORKERNODES=${WORKERNODES}
-export MASTER_INSTANCE_PROFILE_ARN=${MASTER_INSTANCE_PROFILE_ARN}
-export WORKER_INSTANCE_PROFILE_ARN=${WORKER_INSTANCE_PROFILE_ARN}
-export AWS_ROUTE53_PUBLIC_ZONE_ID=${AWS_ROUTE53_PUBLIC_ZONE_ID}
-export USE_ZEROSSL=${USE_ZEROSSL}
-export ZEROSSL_EAB_KID=${ZEROSSL_EAB_KID}
-export ZEROSSL_EAB_HMAC_SECRET=${ZEROSSL_EAB_HMAC_SECRET}
-export GODADDY_API_KEY=${GODADDY_API_KEY}
-export GODADDY_API_SECRET=${GODADDY_API_SECRET}
-export GRPC_PROVIDER=${GRPC_PROVIDER}
 export USE_K3S=${USE_K3S}
-export DOMAIN_NAME=${DOMAIN_NAME}
+export USE_NGINX_GATEWAY=${USE_NGINX_GATEWAY}
+export USE_NLB=${USE_NLB}
+export USE_ZEROSSL=${USE_ZEROSSL}
+export VOLUME_SIZE=${VOLUME_SIZE}
+export VOLUME_TYPE=${VOLUME_TYPE}
+export WORKER_INSTANCE_PROFILE_ARN=${WORKER_INSTANCE_PROFILE_ARN}
+export WORKER_NODE_MACHINE=${WORKER_NODE_MACHINE}
+export WORKER_PROFILE_NAME=${WORKER_PROFILE_NAME}
+export WORKERNODE_USE_PUBLICIP=${WORKERNODE_USE_PUBLICIP}
+export WORKERNODES=${WORKERNODES}
+export ZEROSSL_EAB_HMAC_SECRET=${ZEROSSL_EAB_HMAC_SECRET}
+export ZEROSSL_EAB_KID=${ZEROSSL_EAB_KID}
 EOF
 else
     source ${TARGET_CONFIG_LOCATION}/buildenv
@@ -2216,6 +2238,8 @@ echo "export MASTER_NODES=${MASTER_NODES}" >> ${TARGET_CONFIG_LOCATION}/buildenv
 ### Bootstrap kubernetes
 start_kubernes_on_instances
 
+kubeconfig-merge.sh ${MASTERKUBE} ${TARGET_CLUSTER_LOCATION}/config
+
 echo_blue_bold "create cluster done"
 
 MASTER_IP=$(cat ${TARGET_CLUSTER_LOCATION}/manager-ip)
@@ -2223,17 +2247,20 @@ TOKEN=$(cat ${TARGET_CLUSTER_LOCATION}/token)
 CACERT=$(cat ${TARGET_CLUSTER_LOCATION}/ca.cert)
 
 if [ -z "${PUBLIC_DOMAIN_NAME}" ]; then
-    kubectl create secret tls kube-system -n kube-system --key ${SSL_LOCATION}/privkey.pem --cert ${SSL_LOCATION}/fullchain.pem --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
+    kubectl create secret tls kube-system -n kube-system --dry-run=client -o yaml \
+		--kubeconfig=${TARGET_CLUSTER_LOCATION}/config \
+		--key ${SSL_LOCATION}/privkey.pem \
+		--cert ${SSL_LOCATION}/fullchain.pem | kubectl apply --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -f -
 fi
 
-kubectl create secret generic autoscaler-ssh-keys -n kube-system --from-file=id_rsa="${SSH_PRIVATE_KEY}" --from-file=id_rsa.pub="${SSH_PUBLIC_KEY}" --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
-
-kubeconfig-merge.sh ${MASTERKUBE} ${TARGET_CLUSTER_LOCATION}/config
+kubectl create secret generic autoscaler-ssh-keys -n kube-system --dry-run=client -o yaml \
+	--kubeconfig=${TARGET_CLUSTER_LOCATION}/config
+	--from-file=id_rsa="${SSH_PRIVATE_KEY}" \
+	--from-file=id_rsa.pub="${SSH_PUBLIC_KEY}" | kubectl apply --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -f -
 
 echo_blue_bold "Write aws autoscaler provider config"
 
 if [ ${GRPC_PROVIDER} = "grpc" ]; then
-    CLOUDPROVIDER_CONFIG=grpc-config.json
     cat > ${TARGET_CONFIG_LOCATION}/${CLOUDPROVIDER_CONFIG} <<EOF
     {
         "address": "$CONNECTTO",
@@ -2242,7 +2269,6 @@ if [ ${GRPC_PROVIDER} = "grpc" ]; then
     }
 EOF
 else
-    CLOUDPROVIDER_CONFIG=grpc-config.yaml
     echo "address: $CONNECTTO" > ${TARGET_CONFIG_LOCATION}/${CLOUDPROVIDER_CONFIG}
 fi
 
@@ -2353,60 +2379,7 @@ done
 
 echo "${AUTOSCALER_CONFIG}" | jq . > ${TARGET_CONFIG_LOCATION}/kubernetes-aws-autoscaler.json
 
-# Recopy config file on master node
-kubectl create configmap config-cluster-autoscaler --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -n kube-system \
-	--from-file ${TARGET_CONFIG_LOCATION}/${CLOUDPROVIDER_CONFIG} \
-	--from-file ${TARGET_CONFIG_LOCATION}/kubernetes-aws-autoscaler.json
-
-# Create Pods
-echo_title "= Create EBS provisionner"
-create-ebs-provisionner.sh
-
-echo_title "= Create EFS provisionner"
-create-efs-provisionner.sh
-
-echo_title "= Create CERT Manager"
-create-cert-manager.sh
-
-echo_title "= Create Ingress Controller"
-create-ingress-controller.sh
-
-echo_title "= Create Kubernetes dashboard"
-create-dashboard.sh
-
-echo_title "= Create Kubernetes metric scraper"
-create-metrics.sh
-
-echo_title "= Create Rancher"
-create-rancher.sh
-
-echo_title "= Create Sample hello"
-create-helloworld.sh
-
-echo_title "= Create External DNS"
-create-external-dns.sh
-
-if [ "${LAUNCH_CA}" != "NO" ]; then
-    echo_title "= Create autoscaler"
-    create-autoscaler.sh ${LAUNCH_CA}
-fi
-
-# Add cluster config in configmap
-kubectl create configmap masterkube-config --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -n kube-system \
-	--from-file ${TARGET_CLUSTER_LOCATION}/ca.cert \
-    --from-file ${TARGET_CLUSTER_LOCATION}/dashboard-token \
-    --from-file ${TARGET_CLUSTER_LOCATION}/token
-
-kubectl create configmap kubernetes-pki --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -n kube-system \
-	--from-file ${TARGET_CLUSTER_LOCATION}/kubernetes/pki
-
-if [ "${EXTERNAL_ETCD}" = "true" ]; then
-    kubectl create secret generic etcd-ssl --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -n kube-system \
-        --from-file ${TARGET_CLUSTER_LOCATION}/etcd/ssl
-else
-    kubectl create secret generic etcd-ssl --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -n kube-system \
-        --from-file ${TARGET_CLUSTER_LOCATION}/kubernetes/pki/etcd
-fi
+source ./bin/create-deployment.sh
 
 popd &> /dev/null
 

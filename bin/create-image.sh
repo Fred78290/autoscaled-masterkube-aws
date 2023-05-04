@@ -412,7 +412,7 @@ elif [ "${CONTAINER_ENGINE}" == "containerd" ]; then
     echo "==============================================================================================================================="
     echo "Install Containerd"
     echo "==============================================================================================================================="
-    curl -sL  https://github.com/containerd/containerd/releases/download/v1.6.15/cri-containerd-cni-1.6.15-linux-${SEED_ARCH}.tar.gz | tar -C / -xz
+    curl -sL  https://github.com/containerd/containerd/releases/download/v1.7.0/cri-containerd-cni-1.7.0-linux-${SEED_ARCH}.tar.gz | tar -C / -xz
 
     mkdir -p /etc/containerd
     containerd config default | sed 's/SystemdCgroup = false/SystemdCgroup = true/g' | tee /etc/containerd/config.toml
@@ -420,7 +420,7 @@ elif [ "${CONTAINER_ENGINE}" == "containerd" ]; then
     systemctl enable containerd.service
     systemctl restart containerd
 
-    curl -sL  https://github.com/containerd/nerdctl/releases/download/v1.1.0/nerdctl-1.1.0-linux-${SEED_ARCH}.tar.gz | tar -C /usr/local/bin -xz
+    curl -sL  https://github.com/containerd/nerdctl/releases/download/v1.3.1/nerdctl-1.3.1-linux-${SEED_ARCH}.tar.gz | tar -C /usr/local/bin -xz
 
 else
 
@@ -451,7 +451,7 @@ chmod +x /usr/local/bin/crictl
 echo "==============================================================================================================================="
 echo "= Clean ubuntu distro"
 echo "==============================================================================================================================="
-apt-get autoremove -y
+apt-get autoclean -y
 echo
 
 echo
@@ -604,7 +604,7 @@ elif [ "$CNI_PLUGIN" = "calico" ]; then
     mv calicoctl-linux-${SEED_ARCH} /usr/local/bin/calicoctl
     pull_image https://docs.projectcalico.org/manifests/calico-vxlan.yaml
 elif [ "$CNI_PLUGIN" = "flannel" ]; then
-    pull_image https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+    pull_image https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
 elif [ "$CNI_PLUGIN" = "weave" ]; then
     pull_image "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')"
 elif [ "$CNI_PLUGIN" = "canal" ]; then

@@ -125,7 +125,7 @@ if [ "$FORCE" = "YES" ]; then
     done
 
 elif [ -f ${TARGET_CLUSTER_LOCATION}/config ]; then
-    for INSTANCE_ID in $(kubectl get node -o json --kubeconfig ${TARGET_CLUSTER_LOCATION}/config | jq '.items| .[] | .metadata.annotations["cluster.autoscaler.nodegroup/instance-id"]' | tr -d '"')
+    for INSTANCE_ID in $(kubectl get node -o json --kubeconfig ${TARGET_CLUSTER_LOCATION}/config | jq -r '.items| .[] | .metadata.annotations["cluster.autoscaler.nodegroup/instance-id"]')
     do
         echo_blue_bold "Delete k8s node Instance ID: $INSTANCE_ID"
         delete_instance_id "${INSTANCE_ID}" &
