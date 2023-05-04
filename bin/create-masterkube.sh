@@ -2254,7 +2254,7 @@ if [ -z "${PUBLIC_DOMAIN_NAME}" ]; then
 fi
 
 kubectl create secret generic autoscaler-ssh-keys -n kube-system --dry-run=client -o yaml \
-	--kubeconfig=${TARGET_CLUSTER_LOCATION}/config
+	--kubeconfig=${TARGET_CLUSTER_LOCATION}/config \
 	--from-file=id_rsa="${SSH_PRIVATE_KEY}" \
 	--from-file=id_rsa.pub="${SSH_PUBLIC_KEY}" | kubectl apply --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -f -
 
