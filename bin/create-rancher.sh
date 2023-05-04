@@ -21,7 +21,7 @@ else
 
     curl -sL https://releases.rancher.com/server-charts/latest/rancher-2.7.2-rc1.tgz | tar zxvf - -C /tmp
 
-    sed -i -e 's/1.26.0-0/1.27.9-0/' rancher/Chart.yaml
+    sed -i -e 's/1.26.0-0/1.27.9-0/' $REPO/Chart.yaml
 fi
 
 cat > ${TARGET_DEPLOY_LOCATION}/rancher/rancher.yaml <<EOF
