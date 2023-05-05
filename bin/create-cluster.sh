@@ -39,7 +39,7 @@ export NODEINDEX=0
 export CLUSTER_NODES=()
 export CONTAINER_ENGINE=docker
 export CONTAINER_RUNTIME=docker
-export CONTAINER_CTL=/var/run/dockershim.sock
+export CONTAINER_CTL=unix:///var/run/dockershim.sock
 export USE_K3S=false
 export ETCD_ENDPOINT=
 
@@ -97,12 +97,12 @@ while true; do
             "containerd")
                 CONTAINER_ENGINE="$2"
                 CONTAINER_RUNTIME=remote
-                CONTAINER_CTL=/var/run/containerd/containerd.sock
+                CONTAINER_CTL=unix:///var/run/containerd/containerd.sock
                 ;;
             "cri-o")
                 CONTAINER_ENGINE="$2"
                 CONTAINER_RUNTIME=remote
-                CONTAINER_CTL=/var/run/crio/crio.sock
+                CONTAINER_CTL=unix:///var/run/crio/crio.sock
                 ;;
             *)
                 echo "Unsupported container runtime: $2"
@@ -326,7 +326,7 @@ localAPIEndpoint:
   advertiseAddress: ${APISERVER_ADVERTISE_ADDRESS}
   bindPort: ${APISERVER_ADVERTISE_PORT}
 nodeRegistration:
-  criSocket: unix://${CONTAINER_CTL}
+  criSocket: ${CONTAINER_CTL}
   name: ${NODENAME}
   taints:
   - effect: NoSchedule
@@ -382,7 +382,7 @@ apiVersion: kubeadm.k8s.io/v1beta3
 kind: ClusterConfiguration
 certificatesDir: /etc/kubernetes/pki
 clusterName: ${NODEGROUP_NAME}
-imageRepository: k8s.gcr.io
+imageRepository: registry.k8s.io
 kubernetesVersion: ${KUBERNETES_VERSION}
 networking:
   dnsDomain: cluster.local
@@ -394,9 +394,9 @@ controllerManager:
     cloud-provider: "${CLOUD_PROVIDER}"
     configure-cloud-routes: "${CONFIGURE_CLOUD_ROUTE}"
 controlPlaneEndpoint: ${CONTROL_PLANE_ENDPOINT}:${APISERVER_ADVERTISE_PORT}
-dns:
-  imageRepository: k8s.gcr.io/coredns
-  imageTag: v1.9.3
+#dns:
+#  imageRepository: registry.k8s.io/coredns
+#  imageTag: v1.9.3
 apiServer:
   extraArgs:
     authorization-mode: Node,RBAC
@@ -443,6 +443,11 @@ EOF
     echo "    - ${ENDPOINT}" >> ${KUBEADM_CONFIG}
   done
 fi
+
+  # If version 27 or greater, remove this kuletet argument
+  if [ $MAJOR -ge 27 ]; then
+    sed -i '/container-runtime:/d' ${KUBEADM_CONFIG}
+  fi
 
   echo "Init K8 cluster with options:$K8_OPTIONS"
 
@@ -533,7 +538,7 @@ fi
 
       echo "Install flannel network"
 
-      kubectl apply -f "https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml" 2>&1
+      kubectl apply -f "https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml" 2>&1
 
   elif [ "$CNI_PLUGIN" = "weave" ]; then
 

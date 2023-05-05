@@ -144,6 +144,7 @@ During the process the script will create many files located in
 | `-r\|--resume` | Allow to resume interrupted creation of cluster kubernetes  | |
 | `--create-image-only`| Create image only and exit ||
 | `--cache=<path>`| Cache location |/.local/aws/cache|
+| `--upgrade`| Upgrade existing cluster to upper version of kubernetes ||
 | **Flags to set some location informations** |
 | `--configuration-location=<path>`| Specify where configuration will be stored  | .|
 | `--ssl-location=<path>`| Specify where the etc/ssl dir is stored  | ./etc/ssl |
@@ -191,7 +192,7 @@ During the process the script will create many files located in
 | `--autoscale-machine=<value>` | Override machine type used for auto scaling. |t3a.medium/t4g.medium|
 | `--nginx-machine=<value>` | The instance type name to deploy front nginx node | t3a.small/t4g.small |
 | `--ssh-private-key=<value>`  | Alternate ssh key file |~/.ssh/id_rsa|
-| `--transport=<value>`  | Override the transport to be used between autoscaler and vmware-autoscaler [**tcp**\|**linux**] |linux|
+| `--transport=<value>`  | Override the transport to be used between autoscaler and aws-autoscaler [**tcp**\|**linux**] |linux|
 | `--cloud-provider=<value>`  | Set cloud provider, (aws | external | none) | external |
 | `--node-group=<value>` | The name of kubernetes node group  | aws-ca-k8s |
 | `--cni-plugin-version=<value>`  | CNI version |v1.1.1|
@@ -258,3 +259,7 @@ To scale fresh masterkube `kubectl scale --replicas=2 deploy/helloworld -n kube-
 
 To delete the master kube and associated worker nodes, just run the command [delete-masterkube.sh](./bin/delete-masterkube.sh)
 If the create process fail for any reason, you can use flag **--force**
+
+## Upgrade existing cluster
+
+To upgrade cluster with an upper version of kubernetes, just run `create-masterkube.sh --upgrade --kubernetes-version=<upper version>`

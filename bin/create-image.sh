@@ -3,7 +3,7 @@
 set -e
 
 KUBERNETES_VERSION=$(curl -sSL https://dl.k8s.io/release/stable.txt)
-CNI_PLUGIN_VERSION=v1.1.1
+CNI_PLUGIN_VERSION=v1.2.0
 CNI_PLUGIN=aws
 CACHE=~/.local/aws/cache
 OSDISTRO=$(uname -s)
@@ -34,7 +34,7 @@ else
     TZ=$(sudo systemsetup -gettimezone | awk '{print $2}')
 fi
 
-TEMP=`getopt -o kfc:i:n:op:s:u:v: --long use-k3s:,cache-dir:,container-runtime:,arch:,ecr-password:,force,profile:,region:,subnet-id:,sg-id:,use-public-ip:,user:,ami:,custom-image:,ssh-key-name:,ssh-key-file:,ssh-key-private:,cni-plugin:,cni-plugin-version:,kubernetes-version: -n "$0" -- "$@"`
+TEMP=`getopt -o kfc:i:n:op:s:u:v: --long aws-access-key:,aws-secret-key:,use-k3s:,cache-dir:,container-runtime:,arch:,ecr-password:,force,profile:,region:,subnet-id:,sg-id:,use-public-ip:,user:,ami:,custom-image:,ssh-key-name:,ssh-key-file:,ssh-key-private:,cni-plugin:,cni-plugin-version:,kubernetes-version: -n "$0" -- "$@"`
 eval set -- "$TEMP"
 
 # extract options and their arguments into variables.
@@ -79,6 +79,15 @@ while true ; do
                     ;;
             esac
             shift 2;;
+
+        --aws-access-key)
+            AWS_ACCESS_KEY_ID=$2
+            shift 2
+            ;;
+        --aws-secret-key)
+            AWS_SECRET_ACCESS_KEY=$2
+            shift 2
+            ;;
 
         --) shift ; break ;;
         *) echo_red_bold "$1 - Internal error!" ; exit 1 ;;
@@ -264,11 +273,40 @@ fi
 mkdir -p $(dirname ${CREDENTIALS_CONFIG})
 mkdir -p ${CREDENTIALS_BIN}
 
+KUBELET_CREDS_ARGS="--image-credential-provider-config=${CREDENTIALS_CONFIG} --image-credential-provider-bin-dir=${CREDENTIALS_BIN}"
+
+if [ ${KUBERNETES_MINOR_RELEASE} -gt 26 ]; then
+	ECR_CREDS_VERSION=v1.27.1
+	KUBELET_CREDS_VERSION=v1
+elif [ ${KUBERNETES_MINOR_RELEASE} -gt 25 ]; then
+	ECR_CREDS_VERSION=v1.26.1
+	KUBELET_CREDS_VERSION=v1alpha1
+else
+	ECR_CREDS_VERSION=v1.0.0
+	KUBELET_CREDS_VERSION=v1alpha1
+fi
+
+curl -sL https://github.com/Fred78290/aws-ecr-credential-provider/releases/download/${ECR_CREDS_VERSION}/ecr-credential-provider-${SEED_ARCH} -o ${CREDENTIALS_BIN}/ecr-credential-provider
+chmod +x ${CREDENTIALS_BIN}/ecr-credential-provider
+
+cat > ${CREDENTIALS_CONFIG} <<SHELL
+apiVersion: kubelet.config.k8s.io/${KUBELET_CREDS_VERSION}
+kind: CredentialProviderConfig
+providers:
+  - name: ecr-credential-provider
+    matchImages:
+      - "*.dkr.ecr.*.amazonaws.com"
+      - "*.dkr.ecr.*.amazonaws.cn"
+      - "*.dkr.ecr-fips.*.amazonaws.com"
+      - "*.dkr.ecr.us-iso-east-1.c2s.ic.gov"
+      - "*.dkr.ecr.us-isob-east-1.sc2s.sgov.gov"
+    defaultCacheDuration: "12h"
+    apiVersion: credentialprovider.kubelet.k8s.io/${KUBELET_CREDS_VERSION}
+    args:
+      - get-credentials
+SHELL
+
 if [ -n "${AWS_ACCESS_KEY_ID}" ] && [ -n "${AWS_SECRET_ACCESS_KEY}" ]; then
-
-    curl -sL https://github.com/Fred78290/aws-ecr-credential-provider/releases/download/v1.0.0/ecr-credential-provider-${SEED_ARCH} -o ${CREDENTIALS_BIN}/ecr-credential-provider
-    chmod +x ${CREDENTIALS_BIN}/ecr-credential-provider
-
     mkdir -p /root/.aws
 
     cat > /root/.aws/config  <<SHELL
@@ -284,27 +322,14 @@ aws_access_key_id = ${AWS_ACCESS_KEY_ID}
 aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}
 SHELL
 
-    cat > ${CREDENTIALS_CONFIG} <<SHELL
-apiVersion: kubelet.config.k8s.io/v1alpha1
-kind: CredentialProviderConfig
-providers:
-  - name: ecr-credential-provider
-    matchImages:
-      - "*.dkr.ecr.*.amazonaws.com"
-      - "*.dkr.ecr.*.amazonaws.cn"
-      - "*.dkr.ecr-fips.*.amazonaws.com"
-      - "*.dkr.ecr.us-iso-east-1.c2s.ic.gov"
-      - "*.dkr.ecr.us-isob-east-1.sc2s.sgov.gov"
-    defaultCacheDuration: "12h"
-    apiVersion: credentialprovider.kubelet.k8s.io/v1alpha1
-    args:
-      - get-credentials
+cat >> ${CREDENTIALS_CONFIG} <<SHELL
     env:
       - name: AWS_ACCESS_KEY_ID 
         value: ${AWS_ACCESS_KEY_ID}
       - name: AWS_SECRET_ACCESS_KEY
         value: ${AWS_SECRET_ACCESS_KEY}
 SHELL
+
 fi
 EOF
 
@@ -412,7 +437,7 @@ elif [ "${CONTAINER_ENGINE}" == "containerd" ]; then
     echo "==============================================================================================================================="
     echo "Install Containerd"
     echo "==============================================================================================================================="
-    curl -sL  https://github.com/containerd/containerd/releases/download/v1.6.15/cri-containerd-cni-1.6.15-linux-${SEED_ARCH}.tar.gz | tar -C / -xz
+    curl -sL  https://github.com/containerd/containerd/releases/download/v1.7.0/cri-containerd-cni-1.7.0-linux-${SEED_ARCH}.tar.gz | tar -C / -xz
 
     mkdir -p /etc/containerd
     containerd config default | sed 's/SystemdCgroup = false/SystemdCgroup = true/g' | tee /etc/containerd/config.toml
@@ -420,7 +445,7 @@ elif [ "${CONTAINER_ENGINE}" == "containerd" ]; then
     systemctl enable containerd.service
     systemctl restart containerd
 
-    curl -sL  https://github.com/containerd/nerdctl/releases/download/v1.1.0/nerdctl-1.1.0-linux-${SEED_ARCH}.tar.gz | tar -C /usr/local/bin -xz
+    curl -sL  https://github.com/containerd/nerdctl/releases/download/v1.3.1/nerdctl-1.3.1-linux-${SEED_ARCH}.tar.gz | tar -C /usr/local/bin -xz
 
 else
 
@@ -451,7 +476,7 @@ chmod +x /usr/local/bin/crictl
 echo "==============================================================================================================================="
 echo "= Clean ubuntu distro"
 echo "==============================================================================================================================="
-apt-get autoremove -y
+apt-get autoclean -y
 echo
 
 echo
@@ -555,15 +580,11 @@ SHELL
 fi
 
 if [ ${CONTAINER_ENGINE} = "docker" ]; then
-    echo 'KUBELET_EXTRA_ARGS="--image-credential-provider-config=${CREDENTIALS_CONFIG} --image-credential-provider-bin-dir=${CREDENTIALS_BIN} --network-plugin=cni"' > /etc/default/kubelet
-    echo 'KUBELET_KUBEADM_ARGS=""' > /var/lib/kubelet/kubeadm-flags.env
-elif [ ${CONTAINER_ENGINE} = "containerd" ]; then
-    echo 'KUBELET_EXTRA_ARGS="--image-credential-provider-config=${CREDENTIALS_CONFIG} --image-credential-provider-bin-dir=${CREDENTIALS_BIN}"' > /etc/default/kubelet
-    echo 'KUBELET_KUBEADM_ARGS="--container-runtime=remote --container-runtime-endpoint=/run/containerd/containerd.sock"' > /var/lib/kubelet/kubeadm-flags.env
+	echo "KUBELET_EXTRA_ARGS='${KUBELET_CREDS_ARGS} --network-plugin=cni'" > /etc/default/kubelet
 else
-    echo 'KUBELET_EXTRA_ARGS="--image-credential-provider-config=${CREDENTIALS_CONFIG} --image-credential-provider-bin-dir=${CREDENTIALS_BIN}"' > /etc/default/kubelet
-    echo 'KUBELET_KUBEADM_ARGS="--container-runtime=remote --container-runtime-endpoint=/var/run/crio/crio.sock"' > /var/lib/kubelet/kubeadm-flags.env
+	echo "KUBELET_EXTRA_ARGS='${KUBELET_CREDS_ARGS}'" > /etc/default/kubelet
 fi
+
 
 apt dist-upgrade -y
 apt autoremove -y
@@ -589,13 +610,13 @@ echo "==========================================================================
 
 if [ "$CNI_PLUGIN" = "aws" ]; then
     if [ ${KUBERNETES_MINOR_RELEASE} -gt 24 ]; then
-    AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.12.1/config/master/aws-k8s-cni.yaml
+		AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.12.6/config/master/aws-k8s-cni.yaml
     elif [ ${KUBERNETES_MINOR_RELEASE} -gt 22 ]; then
-    AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.11/config/master/aws-k8s-cni.yaml
+		AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.11.5/config/master/aws-k8s-cni.yaml
     elif [ ${KUBERNETES_MINOR_RELEASE} -gt 20 ]; then
-    AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.10/config/master/aws-k8s-cni.yaml
+		AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.10/config/master/aws-k8s-cni.yaml
     else
-    AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.9.3/config/v1.9/aws-k8s-cni.yaml
+		AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.9.3/config/v1.9/aws-k8s-cni.yaml
     fi
     pull_image ${AWS_CNI_URL} AWS ${ECR_PASSWORD}
 elif [ "$CNI_PLUGIN" = "calico" ]; then
@@ -604,7 +625,7 @@ elif [ "$CNI_PLUGIN" = "calico" ]; then
     mv calicoctl-linux-${SEED_ARCH} /usr/local/bin/calicoctl
     pull_image https://docs.projectcalico.org/manifests/calico-vxlan.yaml
 elif [ "$CNI_PLUGIN" = "flannel" ]; then
-    pull_image https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+    pull_image https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
 elif [ "$CNI_PLUGIN" = "weave" ]; then
     pull_image "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')"
 elif [ "$CNI_PLUGIN" = "canal" ]; then
