@@ -32,7 +32,7 @@ export SSH_PRIVATE_KEY=~/.ssh/id_rsa
 export SSH_PUBLIC_KEY="${SSH_PRIVATE_KEY}.pub"
 export KUBERNETES_VERSION=$(curl -sSL https://dl.k8s.io/release/stable.txt)
 export KUBECONFIG=${HOME}/.kube/config
-export CNI_PLUGIN_VERSION=v1.1.1
+export CNI_PLUGIN_VERSION=v1.2.0
 export CNI_PLUGIN=aws
 export CLOUD_PROVIDER=aws
 export USE_NLB=NO
@@ -113,6 +113,7 @@ export PRIVATE_DOMAIN_NAME=
 export PUBLIC_DOMAIN_NAME=
 
 export UPGRADE_CLUSTER=NO
+export MASTER_NODE_ALLOW_DEPLOYMENT=NO
 
 VPC_PUBLIC_SUBNET_IDS=()
 VPC_PRIVATE_SUBNET_IDS=()
@@ -738,7 +739,7 @@ if [ "${GRPC_PROVIDER}" != "grpc" ] && [ "${GRPC_PROVIDER}" != "externalgrpc" ];
     exit
 fi
 
-if [ ${USE_K3S} ]; then
+if [ "${USE_K3S}" == "true" ]; then
 	WANTED_KUBERNETES_VERSION=${KUBERNETES_VERSION}
 
     K3S_CHANNEL=$(curl -s https://update.k3s.io/v1-release/channels)
@@ -753,7 +754,7 @@ if [ ${USE_K3S} ]; then
 	fi
 fi
 
-if [ -z ${TARGET_IMAGE} ]; then
+if [ -z "${TARGET_IMAGE}" ]; then
     ROOT_IMG_NAME=$(aws ec2 describe-images --image-ids ${SEED_IMAGE} | jq -r '.Images[0].Name//""' | sed -E 's/.+ubuntu-(\w+)-.+/\1-k8s/')
 
     if [ "${ROOT_IMG_NAME}" = "-k8s" ]; then
@@ -761,7 +762,7 @@ if [ -z ${TARGET_IMAGE} ]; then
         exit
     fi
 
-    if [ ${USE_K3S} ]; then
+	if [ "${USE_K3S}" == "true" ]; then
         TARGET_IMAGE=$(echo -n "${ROOT_IMG_NAME}-k3s-${KUBERNETES_VERSION}-${SEED_ARCH}" | tr '+' '-')
     else
         TARGET_IMAGE="${ROOT_IMG_NAME}-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${CONTAINER_ENGINE}-${SEED_ARCH}"

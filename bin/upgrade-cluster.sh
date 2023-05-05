@@ -8,6 +8,7 @@ SCP_OPTIONS="${SSH_OPTIONS} -p -r"
 KUBECONFIG_CONTEXT=k8s-${MASTERKUBE}-admin@${NODEGROUP_NAME}
 
 mkdir -p ${TARGET_CONFIG_LOCATION}
+mkdir -p ${TARGET_DEPLOY_LOCATION}
 mkdir -p ${TARGET_CLUSTER_LOCATION}
 
 kubectl config get-contexts ${KUBECONFIG_CONTEXT} &>/dev/null || (echo_red_bold "Cluster ${KUBECONFIG_CONTEXT} not found in kubeconfig" ; exit 1)
@@ -202,11 +203,11 @@ else
 	IFS=. read VERSION MAJOR MINOR <<< "$KUBERNETES_VERSION"
 
 	# Update tools
-	echo_title "Update kubernetes binaries"
-	ADDRESSES=$(kubectl get no --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -o json | jq -r '.items[].status.addresses[]|select(.type == "ExternalIP")|.address')
+	echo_title "Update kubernetes binaries to ${KUBERNETES_VERSION}"
+	ADDRESSES=$(kubectl get no --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -o json | jq -r '.items[].status.addresses[]|select(.type == "InternalIP")|.address')
 	for ADDR in ${ADDRESSES}
 	do
-		ssh ${SSH_OPTIONS} ${KUBERNETES_USER}@${ADDR} <<EOF
+		ssh ${SSH_OPTIONS} ${SEED_USER}@${ADDR} <<EOF
 			SEED_ARCH=\$([ "\$(uname -m)" == "aarch64" ] && echo -n arm64 || echo -n amd64)
 			cd /usr/local/bin
 			sudo curl -sL --remote-name-all https://storage.googleapis.com/kubernetes-release/release/${KUBERNETES_VERSION}/bin/linux/\${SEED_ARCH}/{kubeadm,kubectl,kube-proxy}
@@ -216,11 +217,11 @@ EOF
 
 	# Upgrade control plane
 	echo_title "Update control plane nodes"
-	ADDRESSES=$(kubectl get no --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -o json | jq -r '.items[]|select(.metadata.labels.master == "true")|.status.addresses[]|select(.type == "ExternalIP")|.address')
+	ADDRESSES=$(kubectl get no --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -o json | jq -r '.items[]|select(.metadata.labels.master == "true")|.status.addresses[]|select(.type == "InternalIP")|.address')
 	for ADDR in ${ADDRESSES}
 	do
 		echo_blue_bold "Update node: ${ADDR}"
-		ssh ${SSH_OPTIONS} ${KUBERNETES_USER}@${ADDR} <<EOF
+		ssh ${SSH_OPTIONS} ${SEED_USER}@${ADDR} <<EOF
 			if [ ${MAJOR} -ge 27 ] && [ -f /etc/kubernetes/kubeadm-config.yaml ]; then
 				sudo sed -i '/container-runtime:/d' /etc/kubernetes/kubeadm-config.yaml
 			fi
@@ -231,11 +232,11 @@ EOF
 
 	# Upgrade worker
 	echo_title "Update worker nodes"
-	ADDRESSES=$(kubectl get no --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -o json | jq -r '.items[]|select(.metadata.labels.worker == "true")|.status.addresses[]|select(.type == "ExternalIP")|.address')
+	ADDRESSES=$(kubectl get no --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -o json | jq -r '.items[]|select(.metadata.labels.worker == "true")|.status.addresses[]|select(.type == "InternalIP")|.address')
 	for ADDR in ${ADDRESSES}
 	do
 		echo_blue_bold "Update node: ${ADDR}"
-		ssh ${SSH_OPTIONS} ${KUBERNETES_USER}@${ADDR} <<EOF
+		ssh ${SSH_OPTIONS} ${SEED_USER}@${ADDR} <<EOF
 		sudo kubeadm upgrade node
 EOF
 	done
@@ -249,13 +250,13 @@ EOF
 	do
 		NODE=$(echo ${NODES} | jq ".items[$((INDEX-1))]")
 		NODENAME=$(echo ${NODE} | jq -r .metadata.name)
-		ADDR=$(echo ${NODE} | jq -r '.status.addresses[]|select(.type == "ExternalIP")|.address')
+		ADDR=$(echo ${NODE} | jq -r '.status.addresses[]|select(.type == "InternalIP")|.address')
 
 		echo_blue_bold "Update kubelet for node: ${NODENAME}"
 
 		kubectl cordon ${NODENAME} --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
 
-		ssh ${SSH_OPTIONS} ${KUBERNETES_USER}@${ADDR} <<EOF
+		ssh ${SSH_OPTIONS} ${SEED_USER}@${ADDR} <<EOF
 			if [ ${MAJOR} -ge 27 ] && [ -f /var/lib/kubelet/kubeadm-flags.env ]; then
 				sudo sed -i -E 's/--container-runtime=\w+//' /var/lib/kubelet/kubeadm-flags.env
 			fi 
