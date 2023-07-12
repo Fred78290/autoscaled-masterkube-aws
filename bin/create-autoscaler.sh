@@ -33,17 +33,15 @@ fi
 case $KUBERNETES_MINOR_RELEASE in
     25)
         CLUSTER_AUTOSCALER_VERSION=v1.25.6
-        AWS_AUTOSCALER_VERSION=v1.25.9
+        AWS_AUTOSCALER_VERSION=v1.25.11
         ;;
     26)
         CLUSTER_AUTOSCALER_VERSION=v1.26.1
-        AWS_AUTOSCALER_VERSION=v1.26.4
+        AWS_AUTOSCALER_VERSION=v1.26.6
         ;;
     27)
-        CLUSTER_AUTOSCALER_VERSION=v1.27.1
-        AWS_AUTOSCALER_VERSION=v1.27.1
-		# Not yet published
-	    AUTOSCALER_REGISTRY=$REGISTRY
+        CLUSTER_AUTOSCALER_VERSION=v1.27.2
+        AWS_AUTOSCALER_VERSION=v1.27.3
         ;;
     *)
         echo "Former version aren't supported by aws autoscaler"
