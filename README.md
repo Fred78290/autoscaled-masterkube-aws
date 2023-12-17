@@ -154,7 +154,7 @@ During the process the script will create many files located in
 | `--route53-profile` | Specify AWS profile for route53 | $AWS_PROFILE_ROUTE53 env vars |
 | `--region` | AWS Region to deploy  | $AWS_REGION env vars |
 | **Flag to design the kubernetes cluster** |
-| `--use-k3s` | Use k3s in place of kubeadm | NO |
+| `--k8s-distribution=[kubeadm, k3s, rke2]` | Which kubernetes distribution to use: kubeadm,k3s,rke2 | kubeadm |
 | `-c\|--ha-cluster` | Allow to create an HA cluster with 3 control planes | NO |
 | `--worker-nodes` | Specify the number of worker node created in the cluster. | 3 |
 | `--container-runtime` | Specify which OCI runtime to use. [**docker**\|**containerd**\|**cri-o**]| containerd |

@@ -1,3 +1,5 @@
+SSH_OPTIONS="-o BatchMode=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+SCP_OPTIONS="${SSH_OPTIONS} -p -r"
 
 function verbose() {
     if [ ${VERBOSE} = "YES" ]; then

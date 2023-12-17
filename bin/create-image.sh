@@ -17,6 +17,7 @@ SEED_IMAGE=
 TARGET_IMAGE=
 CONTAINER_ENGINE=docker
 CONTAINER_CTL=docker
+KUBERNETES_DISTRO=kubedm
 SUBNET_ID=
 SECURITY_GROUPID=
 SSH_KEY_PUB=~/.ssh/id_rsa.pub
@@ -34,7 +35,7 @@ else
     TZ=$(sudo systemsetup -gettimezone | awk '{print $2}')
 fi
 
-TEMP=`getopt -o kfc:i:n:op:s:u:v: --long aws-access-key:,aws-secret-key:,use-k3s:,cache-dir:,container-runtime:,arch:,ecr-password:,force,profile:,region:,subnet-id:,sg-id:,use-public-ip:,user:,ami:,custom-image:,ssh-key-name:,ssh-key-file:,ssh-key-private:,cni-plugin:,cni-plugin-version:,kubernetes-version: -n "$0" -- "$@"`
+TEMP=`getopt -o kfc:i:n:op:s:u:v: --long k8s-distribution:,aws-access-key:,aws-secret-key:,use-k3s:,cache-dir:,container-runtime:,arch:,ecr-password:,force,profile:,region:,subnet-id:,sg-id:,use-public-ip:,user:,ami:,custom-image:,ssh-key-name:,ssh-key-file:,ssh-key-private:,cni-plugin:,cni-plugin-version:,kubernetes-version: -n "$0" -- "$@"`
 eval set -- "$TEMP"
 
 # extract options and their arguments into variables.
@@ -60,9 +61,19 @@ while true ; do
         --subnet-id) SUBNET_ID="${2}" ; shift 2;;
         --sg-id) SECURITY_GROUPID="${2}" ; shift 2;;
         --use-public-ip) MASTER_USE_PUBLICIP="${2}" ; shift 2;;
-        --use-k3s) USE_K3S=$2 ; shift 2;;
         --cache-dir) CACHE=$2 ; shift 2;;
-
+        --k8s-distribution) 
+            case "$2" in
+                kubeadm|k3s|rke2)
+                KUBERNETES_DISTRO=$2
+                ;;
+            *)
+                echo "Unsupported kubernetes distribution: $2"
+                exit 1
+                ;;
+            esac
+            shift 2
+            ;;
         --container-runtime)
             case "$2" in
                 "docker")
@@ -158,6 +169,17 @@ if [ -z ${KEYEXISTS} ]; then
     aws ec2 import-key-pair --profile ${AWS_PROFILE} --region ${AWS_REGION} --key-name ${SSH_KEYNAME} --public-key-material "file://${SSH_KEY_PUB}"
 fi
 
+case "${KUBERNETES_DISTRO}" in
+    k3s|rke2)
+        CREDENTIALS_CONFIG=/var/lib/rancher/credentialprovider/config.yaml
+        CREDENTIALS_BIN=/var/lib/rancher/credentialprovider/bin
+        ;;
+    kubeadm)
+        CREDENTIALS_CONFIG=/etc/kubernetes/credential.yaml
+        CREDENTIALS_BIN=/usr/local/bin
+        ;;
+esac
+
 KUBERNETES_MINOR_RELEASE=$(echo -n $KUBERNETES_VERSION | awk -F. '{ print $2 }')
 CRIO_VERSION=$(echo -n $KUBERNETES_VERSION | tr -d 'v' | awk -F. '{ print $1"."$2 }')
 
@@ -188,7 +210,9 @@ ECR_PASSWORD=${ECR_PASSWORD}
 CRIO_VERSION=${CRIO_VERSION}
 CONTAINER_ENGINE=${CONTAINER_ENGINE}
 CONTAINER_CTL=${CONTAINER_CTL}
-USE_K3S=${USE_K3S}
+KUBERNETES_DISTRO=${KUBERNETES_DISTRO}
+CREDENTIALS_CONFIG=$CREDENTIALS_CONFIG
+CREDENTIALS_BIN=$CREDENTIALS_BIN
 AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
 AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
 
@@ -262,14 +286,6 @@ echo '1' > /proc/sys/net/bridge/bridge-nf-call-iptables
 
 sysctl --system
 
-if [ "${USE_K3S}" == "true" ]; then
-    CREDENTIALS_CONFIG=/var/lib/rancher/credentialprovider/config.yaml
-    CREDENTIALS_BIN=/var/lib/rancher/credentialprovider/bin
-else
-    CREDENTIALS_CONFIG=/etc/kubernetes/credential.yaml
-    CREDENTIALS_BIN=/usr/local/bin
-fi
-
 mkdir -p $(dirname ${CREDENTIALS_CONFIG})
 mkdir -p ${CREDENTIALS_BIN}
 
@@ -329,22 +345,48 @@ cat >> ${CREDENTIALS_CONFIG} <<SHELL
       - name: AWS_SECRET_ACCESS_KEY
         value: ${AWS_SECRET_ACCESS_KEY}
 SHELL
-
 fi
 EOF
 
-if [ "${USE_K3S}" == "true" ]; then
+if [ "${KUBERNETES_DISTRO}" == "rke2" ]; then
+    echo "prepare rke2 image"
+
+    cat >> "${ISODIR}/prepare-image.sh" <<"EOF"
+    curl -sfL https://get.rke2.io | INSTALL_RKE2_CHANNEL="${KUBERNETES_VERSION}" sh -
+
+    pushd /usr/local/bin
+    curl -sL --remote-name-all https://storage.googleapis.com/kubernetes-release/release/${KUBERNETES_VERSION%%+*}/bin/linux/${SEED_ARCH}/{kubectl,kube-proxy}
+    chmod +x /usr/local/bin/kube*
+    popd
+
+    mkdir -p /etc/rancher/rke2
+    mkdir -p /etc/NetworkManager/conf.d
+
+    cat > /etc/NetworkManager/conf.d/rke2-canal.conf <<"SHELL"
+[keyfile]
+unmanaged-devices=interface-name:cali*;interface-name:flannel*
+SHELL
+    cat > /etc/rancher/rke2/config.yaml <<"SHELL"
+kubelet-arg:
+  - cloud-provider=external
+  - fail-swap-on=false
+SHELL
+EOF
+
+elif [ "${KUBERNETES_DISTRO}" == "k3s" ]; then
+    echo "prepare k3s image"
+
     cat >> "${CACHE}/prepare-image.sh" <<"EOF"
-curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${KUBERNETES_VERSION}" INSTALL_K3S_SKIP_ENABLE=true sh -
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${KUBERNETES_VERSION}" INSTALL_K3S_SKIP_ENABLE=true sh -
 
-mkdir -p /etc/systemd/system/k3s.service.d
-echo "K3S_MODE=agent" > /etc/default/k3s
-echo "K3S_ARGS=" > /etc/systemd/system/k3s.service.env
-echo "K3S_SERVER_ARGS=" > /etc/systemd/system/k3s.server.env
-echo "K3S_AGENT_ARGS=" > /etc/systemd/system/k3s.agent.env
-echo "K3S_DISABLE_ARGS=" > /etc/systemd/system/k3s.disabled.env
+    mkdir -p /etc/systemd/system/k3s.service.d
+    echo "K3S_MODE=agent" > /etc/default/k3s
+    echo "K3S_ARGS=" > /etc/systemd/system/k3s.service.env
+    echo "K3S_SERVER_ARGS=" > /etc/systemd/system/k3s.server.env
+    echo "K3S_AGENT_ARGS=" > /etc/systemd/system/k3s.agent.env
+    echo "K3S_DISABLE_ARGS=" > /etc/systemd/system/k3s.disabled.env
 
-cat > /etc/systemd/system/k3s.service.d/10-k3s.conf <<"SHELL"
+    cat > /etc/systemd/system/k3s.service.d/10-k3s.conf <<"SHELL"
 [Service]
 Environment="KUBELET_ARGS=--kubelet-arg=cloud-provider=external --kubelet-arg=fail-swap-on=false"
 EnvironmentFile=-/etc/default/%N
@@ -360,6 +402,8 @@ SHELL
 EOF
 
 else
+    echo "prepare kubeadm image"
+
     cat >> "${CACHE}/prepare-image.sh" <<"EOF"
 function pull_image() {
     local DOCKER_IMAGES=$(curl -s $1 | yq eval -P - | grep -E "\simage: " | sed -E 's/.+image: (.+)/\1/g')
@@ -638,7 +682,6 @@ elif [ "$CNI_PLUGIN" = "romana" ]; then
 fi
 EOF
 fi
-
 
 cat >> "${CACHE}/prepare-image.sh" <<"EOF"
 apt dist-upgrade -y

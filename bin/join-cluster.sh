@@ -9,13 +9,14 @@ HA_CLUSTER=
 EXTERNAL_ETCD=NO
 NODEINDEX=0
 MASTER_NODE_ALLOW_DEPLOYMENT=NO
+MAX_PODS=110
 LOCALHOSTNAME=$(curl -s http://169.254.169.254/latest/meta-data/local-hostname)
 INSTANCEID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
 ZONEID=$(curl http://169.254.169.254/latest/meta-data/placement/availability-zone)
 REGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)
 INSTANCENAME=$(aws ec2  describe-instances --region $REGION --instance-ids $INSTANCEID | jq -r '.Reservations[0].Instances[0].Tags[]|select(.Key == "Name")|.Value')
 IPADDR=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
-USE_K3S=false
+KUBERNETES_DISTRO=kubeadm
 ETCD_ENDPOINT=
 
 APISERVER_ADVERTISE_ADDRESS="${IPADDR}"
@@ -24,7 +25,7 @@ APISERVER_ADVERTISE_PORT="6443"
 MASTER_IP=$(cat ./cluster/manager-ip)
 TOKEN=$(cat ./cluster/token)
 
-TEMP=$(getopt -o c:i:g: --long etcd-endpoint:,use-k3s:,allow-deployment:,join-master:,cloud-provider:,node-index:,use-external-etcd:,control-plane:,node-group: -n "$0" -- "$@")
+TEMP=$(getopt -o c:i:g: --long max-pods:,etcd-endpoint:,k8s-distribution:,allow-deployment:,join-master:,cloud-provider:,node-index:,use-external-etcd:,control-plane:,node-group: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -51,6 +52,10 @@ while true; do
         EXTERNAL_ETCD=$2
         shift 2
         ;;
+    --max-pods)
+        MAX_PODS="$2"
+        shift 2
+        ;;
     --etcd-endpoint)
         ETCD_ENDPOINT="$2"
         shift 2
@@ -63,8 +68,16 @@ while true; do
         MASTER_NODE_ALLOW_DEPLOYMENT=$2 
         shift 2
         ;;
-    --use-k3s)
-        USE_K3S=$2
+    --k8s-distribution)
+        case "$2" in
+            kubeadm|k3s|rke2)
+                KUBERNETES_DISTRO=$2
+                ;;
+            *)
+                echo "Unsupported kubernetes distribution: $2"
+                exit 1
+                ;;
+        esac
         shift 2
         ;;
     --)
@@ -93,9 +106,57 @@ else
     NODENAME=$HOSTNAME
 fi
 
-if [ ${USE_K3S} == "true" ]; then
+if [ ${KUBERNETES_DISTRO} == "rke2" ]; then
     ANNOTE_MASTER=true
-    echo "K3S_ARGS='--kubelet-arg=provider-id=aws://${ZONEID}/${INSTANCEID} --node-name=${NODENAME} --server=https://${MASTER_IP} --token=${TOKEN}'" > /etc/systemd/system/k3s.service.env
+    RKE2_SERVICE=rke2-agent
+
+    cat > /etc/rancher/rke2/config.yaml <<EOF
+kubelet-arg:
+  - cloud-provider=external
+  - fail-swap-on=false
+  - provider-id=aws://${ZONEID}/${INSTANCEID}
+  - max-pods=${MAX_PODS}
+node-name: ${NODENAME}
+server: https://${MASTER_IP%%:*}:9345
+token: ${TOKEN}
+EOF
+
+    if [ "$HA_CLUSTER" = "true" ]; then
+        RKE2_SERVICE=rke2-server
+    
+        echo "disable-cloud-controller: true" >> /etc/rancher/rke2/config.yaml
+        echo "cloud-provider-name: external" >> /etc/rancher/rke2/config.yaml
+        echo "disable:" >> /etc/rancher/rke2/config.yaml
+        echo "  - servicelb" >> /etc/rancher/rke2/config.yaml
+        echo "  - rke2-ingress-nginx" >> /etc/rancher/rke2/config.yaml
+        echo "  - rke2-metrics-server" >> /etc/rancher/rke2/config.yaml
+
+        if [ "${EXTERNAL_ETCD}" == "true" ] && [ -n "${ETCD_ENDPOINT}" ]; then
+            echo "datastore-endpoint: ${ETCD_ENDPOINT}" >> /etc/rancher/rke2/config.yaml
+            echo "datastore-cafile: /etc/etcd/ssl/ca.pem" >> /etc/rancher/rke2/config.yaml
+            echo "datastore-certfile: /etc/etcd/ssl/etcd.pem" >> /etc/rancher/rke2/config.yaml
+            echo "datastore-keyfile: /etc/etcd/ssl/etcd-key.pem" >> /etc/rancher/rke2/config.yaml
+        fi
+    fi
+
+    echo -n "Start ${RKE2_SERVICE} service"
+
+    systemctl enable ${RKE2_SERVICE}.service
+    systemctl start ${RKE2_SERVICE}.service
+
+    echo -n "Wait node ${NODENAME} to be ready"
+
+    while [ -z "$(kubectl get no ${NODENAME} 2>/dev/null | grep -v NAME)" ];
+    do
+        echo -n "."
+        sleep 1
+    done
+
+    echo
+
+elif [ ${KUBERNETES_DISTRO} == "k3s" ]; then
+    ANNOTE_MASTER=true
+    echo "K3S_ARGS='--kubelet-arg=provider-id=aws://${ZONEID}/${INSTANCEID} --kubelet-arg=max-pods=${MAX_PODS} --node-name=${NODENAME} --server=https://${MASTER_IP} --token=${TOKEN}'" > /etc/systemd/system/k3s.service.env
 
     if [ "$HA_CLUSTER" = "true" ]; then
         echo "K3S_MODE=server" > /etc/default/k3s
@@ -184,9 +245,9 @@ if [ "$HA_CLUSTER" = "true" ]; then
         --overwrite
 
     if [ "${MASTER_NODE_ALLOW_DEPLOYMENT}" = "YES" ];then
-        kubectl taint node ${NODENAME} node-role.kubernetes.io/master:NoSchedule-
-    elif [ "${USE_K3S}" == "true" ]; then
-        kubectl taint node ${HOSTNAME} node-role.kubernetes.io/master:NoSchedule node-role.kubernetes.io/control-plane:NoSchedule
+        kubectl taint node ${NODENAME} node-role.kubernetes.io/master:NoSchedule- node-role.kubernetes.io/master:NoSchedule-
+    elif [ "${KUBERNETES_DISTRO}" == "k3s" ]; then; then
+        kubectl taint node ${NODENAME} node-role.kubernetes.io/master:NoSchedule node-role.kubernetes.io/control-plane:NoSchedule
     fi
 else
     kubectl label nodes ${NODENAME} \

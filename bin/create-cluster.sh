@@ -5,6 +5,7 @@ set -e
 export CNI_PLUGIN=aws
 export CLOUD_PROVIDER=aws
 export CONFIGURE_CLOUD_ROUTE=false
+export KUBERNETES_DISTRO=kubeadm
 export KUBERNETES_VERSION=$(curl -sSL https://dl.k8s.io/release/stable.txt)
 export CLUSTER_DIR=/etc/cluster
 export SCHEME="aws"
@@ -40,18 +41,17 @@ export CLUSTER_NODES=()
 export CONTAINER_ENGINE=docker
 export CONTAINER_RUNTIME=docker
 export CONTAINER_CTL=unix:///var/run/dockershim.sock
-export USE_K3S=false
 export ETCD_ENDPOINT=
 
 # /var/run/crio/crio.sock
 
-if [ "$(uname -p)" == "aarch64" ];  then
+if [ "$(uname -p)" == "aarch64" ]; then
 	ARCH="arm64"
 else
 	ARCH="amd64"
 fi
 
-TEMP=$(getopt -o xh:i:p:n:c:k:s: --long etcd-endpoint:,use-k3s:,ecr-password:,allow-deployment:,container-runtime:,trace,control-plane-endpoint:,use-external-etcd:,cluster-nodes:,load-balancer-ip:,ha-cluster:,node-index:,private-zone-id:,private-zone-name:,cloud-provider:,max-pods:,node-group:,cert-extra-sans:,cni-plugin:,kubernetes-version: -n "$0" -- "$@")
+TEMP=$(getopt -o xh:i:p:n:c:k:s: --long etcd-endpoint:,k8s-distribution:,ecr-password:,allow-deployment:,container-runtime:,trace,control-plane-endpoint:,use-external-etcd:,cluster-nodes:,load-balancer-ip:,ha-cluster:,node-index:,private-zone-id:,private-zone-name:,cloud-provider:,max-pods:,node-group:,cert-extra-sans:,cni-plugin:,kubernetes-version: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -82,9 +82,16 @@ while true; do
         MASTER_NODE_ALLOW_DEPLOYMENT=$2
         shift 2
         ;;
-
-    --use-k3s)
-        USE_K3S=$2
+    --k8s-distribution)
+        case "$2" in
+            kubeadm|k3s|rke2)
+                KUBERNETES_DISTRO=$2
+                ;;
+            *)
+                echo "Unsupported kubernetes distribution: $2"
+                exit 1
+                ;;
+        esac
         shift 2
         ;;
     --container-runtime)
@@ -92,7 +99,7 @@ while true; do
             "docker")
                 CONTAINER_ENGINE="docker"
                 CONTAINER_RUNTIME=docker
-                CONTAINER_CTL=/var/run/dockershim.sock
+                CONTAINER_CTL=unix:///var/run/dockershim.sock
                 ;;
             "containerd")
                 CONTAINER_ENGINE="$2"
@@ -188,22 +195,120 @@ else
   NODENAME=$HOSTNAME
 fi
 
-if [ ${USE_K3S} == "true" ]; then
-  ANNOTE_MASTER=true
-  CERT_SANS="${LOAD_BALANCER_IP},${CONTROL_PLANE_ENDPOINT},${CONTROL_PLANE_ENDPOINT%%.*}"
+function collect_cert_sans() {
+  local TLS_SNA=(
+    "${LOAD_BALANCER_IP}"
+    "${CONTROL_PLANE_ENDPOINT_HOST}"
+    "${CONTROL_PLANE_ENDPOINT_HOST%%.*}"
+  )
 
   for CERT_EXTRA in ${CERT_EXTRA_SANS[*]} 
   do
-      CERT_SANS="${CERT_SANS},${CERT_EXTRA}"
+    if [[ ! ${TLS_SNA[*]} =~ "${CERT_EXTRA}" ]]; then
+      TLS_SNA+=("${CERT_EXTRA}")
+    fi
   done
 
   for CLUSTER_NODE in ${CLUSTER_NODES[*]}
   do
-      IFS=: read HOST IP <<< $CLUSTER_NODE
-      [ -n ${IP} ] && CERT_SANS="${CERT_SANS},${IP}"
-      [ -n ${HOST} ] && CERT_SANS="${CERT_SANS},${HOST}"
-      [ -n ${HOST} ] && CERT_SANS="${CERT_SANS},${HOST%%.*}"
+    IFS=: read HOST IP <<< $CLUSTER_NODE
+    if [ -n ${IP} ] && [[ ! ${TLS_SNA[*]} =~ "${IP}" ]]; then
+      TLS_SNA+=("${CERT_EXTRA}")
+    fi
+
+    if [ -n ${HOST} ]; then
+      [[ ! ${TLS_SNA[*]} =~ "${HOST}" ]] && TLS_SNA+=("${HOST}")
+      HOST="${HOST%%.*}"
+      [[ ! ${TLS_SNA[*]} =~ "${HOST}" ]] && TLS_SNA+=("${HOST}")
+    fi
   done
+
+  echo -n "${TLS_SNA[*]}" | tr ' ' ','
+}
+
+CERT_SANS="$(collect_cert_sans)"
+
+if [ ${KUBERNETES_DISTRO} == "rke2" ]; then
+  ANNOTE_MASTER=true
+  IFS=',' read -ra CERT_SANS <<<"${CERT_SANS}"
+
+  cat > /etc/rancher/rke2/config.yaml <<EOF
+kubelet-arg:
+  - cloud-provider=external
+  - fail-swap-on=false
+  - provider-id=aws://${ZONEID}/${INSTANCEID}
+  - max-pods=${MAX_PODS}
+node-name: ${HOSTNAME}
+advertise-address: ${APISERVER_ADVERTISE_ADDRESS}
+disable-cloud-controller: true
+cloud-provider-name: external
+disable:
+  - rke2-ingress-nginx
+  - rke2-metrics-server
+  - servicelb
+tls-san:
+EOF
+
+  for CERT_SAN in ${CERT_SANS[*]} 
+  do
+    echo "  - ${CERT_SAN}" >> /etc/rancher/rke2/config.yaml
+  done
+
+  if [ "$HA_CLUSTER" = "true" ]; then
+    if [ "${EXTERNAL_ETCD}" == "true" ] && [ -n "${ETCD_ENDPOINT}" ]; then
+      echo "disable-etcd: true" >> /etc/rancher/rke2/config.yaml
+      echo "datastore-endpoint: ${ETCD_ENDPOINT}" >> /etc/rancher/rke2/config.yaml
+      echo "datastore-cafile: /etc/etcd/ssl/ca.pem" >> /etc/rancher/rke2/config.yaml
+      echo "datastore-certfile: /etc/etcd/ssl/etcd.pem" >> /etc/rancher/rke2/config.yaml
+      echo "datastore-keyfile: /etc/etcd/ssl/etcd-key.pem" >> /etc/rancher/rke2/config.yaml
+    else
+      echo "cluster-init: true" >> /etc/rancher/rke2/config.yaml
+    fi
+  fi
+
+  echo -n "Start rke2-server service"
+
+  systemctl enable rke2-server.service
+  systemctl start rke2-server.service
+
+  while [ ! -f /etc/rancher/rke2/rke2.yaml ];
+  do
+    echo -n "."
+    sleep 1
+  done
+
+  echo
+
+  mkdir -p $CLUSTER_DIR/kubernetes/pki
+
+  mkdir -p $HOME/.kube
+  cp -i /etc/rancher/rke2/rke2.yaml $HOME/.kube/config
+  chown $(id -u):$(id -g) $HOME/.kube/config
+
+  cp /etc/rancher/rke2/rke2.yaml $CLUSTER_DIR/config
+  cp /var/lib/rancher/rke2/server/token $CLUSTER_DIR/token
+  cp -r /var/lib/rancher/rke2/server/tls/* $CLUSTER_DIR/kubernetes/pki/
+
+  openssl x509 -pubkey -in /var/lib/rancher/rke2/server/tls/server-ca.crt | openssl rsa -pubin -outform der 2>/dev/null | openssl dgst -sha256 -hex | sed 's/^.* //' | tr -d '\n' > $CLUSTER_DIR/ca.cert
+
+  sed -i -e "s/127.0.0.1/${CONTROL_PLANE_ENDPOINT_HOST}/g" -e "s/default/k8s-${HOSTNAME}-admin@${NODEGROUP_NAME}/g" $CLUSTER_DIR/config
+
+  rm -rf $CLUSTER_DIR/kubernetes/pki/temporary-certs
+
+  export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
+
+  echo -n "Wait node ${HOSTNAME} to be ready"
+
+  while [ -z "$(kubectl get no ${HOSTNAME} 2>/dev/null | grep -v NAME)" ];
+  do
+    echo -n "."
+    sleep 1
+  done
+
+  echo
+
+elif [ ${KUBERNETES_DISTRO} == "k3s" ]; then
+  ANNOTE_MASTER=true
 
   echo "K3S_MODE=server" > /etc/default/k3s
   echo "K3S_ARGS='--kubelet-arg=provider-id=aws://${ZONEID}/${INSTANCEID} --node-name=${NODENAME} --advertise-address=${APISERVER_ADVERTISE_ADDRESS} --advertise-port=${APISERVER_ADVERTISE_PORT} --tls-san=${CERT_SANS}'" > /etc/systemd/system/k3s.service.env
@@ -403,28 +508,13 @@ apiServer:
     cloud-provider: "${CLOUD_PROVIDER}"
   timeoutForControlPlane: 4m0s
   certSANs:
-  - ${CONTROL_PLANE_ENDPOINT}
-  - ${CONTROL_PLANE_ENDPOINT%%.*}
 EOF
 
   echo "${APISERVER_ADVERTISE_ADDRESS} ${CONTROL_PLANE_ENDPOINT}" >> /etc/hosts
 
-  for LB_IP in ${LOAD_BALANCER_IP[*]} 
+  for CERT_SAN in ${CERT_SANS[*]} 
   do
-      echo "  - $LB_IP" >> ${KUBEADM_CONFIG}
-  done
-
-  for CERT_EXTRA in ${CERT_EXTRA_SANS[*]} 
-  do
-      echo "  - $CERT_EXTRA" >> ${KUBEADM_CONFIG}
-  done
-
-  for CLUSTER_NODE in ${CLUSTER_NODES[*]}
-  do
-    IFS=: read HOST IP <<< "$CLUSTER_NODE"
-    [ -z ${IP} ] || echo "  - ${IP}" >> ${KUBEADM_CONFIG}
-    [ -z ${HOST} ] || echo "  - ${HOST}" >> ${KUBEADM_CONFIG}
-    [ -z ${HOST} ] || echo "  - ${HOST%%.*}" >> ${KUBEADM_CONFIG}
+    echo "  - $CERT_SAN" >> ${KUBEADM_CONFIG}
   done
 
 # External ETCD

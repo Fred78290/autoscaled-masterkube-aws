@@ -30,6 +30,7 @@ export MASTERKUBE="${NODEGROUP_NAME}-masterkube"
 export DASHBOARD_HOSTNAME=masterkube-aws-dashboard
 export SSH_PRIVATE_KEY=~/.ssh/id_rsa
 export SSH_PUBLIC_KEY="${SSH_PRIVATE_KEY}.pub"
+export KUBERNETES_DISTRO=kubeadm
 export KUBERNETES_VERSION=$(curl -sSL https://dl.k8s.io/release/stable.txt)
 export KUBECONFIG=${HOME}/.kube/config
 export CNI_PLUGIN_VERSION=v1.2.0
@@ -38,7 +39,6 @@ export CLOUD_PROVIDER=aws
 export USE_NLB=NO
 export USE_ZEROSSL=YES
 export HA_CLUSTER=false
-export USE_K3S=false
 export FIRSTNODE_INDEX=0
 export CONTROLNODES=1
 export WORKERNODES=3
@@ -75,6 +75,7 @@ export CONTAINER_ENGINE=containerd
 export USE_NGINX_GATEWAY=NO
 export PREFER_SSH_PUBLICIP=NO
 export SILENT="&> /dev/null"
+export VERBOSE=NO
 
 # aws region eu-west1
 export SEED_ARCH=amd64
@@ -162,7 +163,7 @@ Options are:
 
 ### Design the kubernetes cluster
 
---use-k3s                                        # Use k3s in place of kubeadm, default ${USE_K3S}
+--k8s-distribution=<kubeadm|k3s|rke2>            # Which kubernetes distribution to use: kubeadm, k3s, rke2, default ${KUBERNETES_DISTRO}
 --ha-cluster                                     # Allow to create an HA cluster, default ${HA_CLUSTER}
 --worker-nodes=<value>                           # Specify the number of worker nodes created in HA cluster, default ${WORKERNODES}
 --container-runtime=<docker|containerd|cri-o>    # Specify which OCI runtime to use, default ${CONTAINER_ENGINE}
@@ -249,7 +250,7 @@ Options are:
 EOF
 }
 
-TEMP=$(getopt -o hvxr --long upgrade,use-k3s:,cloudprovider:,use-zerossl,zerossl-eab-kid:,zerossl-eab-hmac-secret:,godaddy-key:,godaddy-secret:,route53-profile:,route53-zone-id:,cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
+TEMP=$(getopt -o hvxr --long upgrade,k8s-distribution:,cloudprovider:,use-zerossl,zerossl-eab-kid:,zerossl-eab-hmac-secret:,godaddy-key:,godaddy-secret:,route53-profile:,route53-zone-id:,cache:,cert-email:,public-domain:,private-domain:,dashboard-hostname:,delete,dont-prefer-ssh-publicip,prefer-ssh-publicip,dont-create-nginx-apigateway,create-nginx-apigateway,configuration-location:,ssl-location:,control-plane-machine:,worker-node-machine:,autoscale-machine:,internet-facing,no-internet-facing,control-plane-public,no-control-plane-public,create-image-only,nginx-machine:,volume-type:,volume-size:,aws-defs:,container-runtime:,cni-plugin:,trace,help,verbose,resume,ha-cluster,create-external-etcd,dont-use-nlb,use-nlb,worker-nodes:,arch:,cloud-provider:,max-pods:,profile:,region:,node-group:,target-image:,seed-image:,seed-user:,vpc-id:,public-subnet-id:,public-sg-id:,private-subnet-id:,private-sg-id:,transport:,ssh-private-key:,cni-plugin-version:,kubernetes-version:,max-nodes-total:,cores-total:,memory-total:,max-autoprovisioned-node-group-count:,scale-down-enabled:,scale-down-delay-after-add:,scale-down-delay-after-delete:,scale-down-delay-after-failure:,scale-down-unneeded-time:,scale-down-unready-time:,unremovable-node-recheck-timeout: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -265,7 +266,7 @@ while true; do
 		shift
 		;;
     -v|--verbose)
-        SILENT=
+        VERBOSE=YES
         shift 1
         ;;
     -x|--trace)
@@ -375,9 +376,17 @@ while true; do
         CACHE=$2
         shift 2
         ;;
-    --use-k3s)
-        USE_K3S=true
-        shift 1
+    --k8s-distribution)
+        case "$2" in
+            kubeadm|k3s|rke2)
+                KUBERNETES_DISTRO=$2
+                ;;
+            *)
+                echo "Unsupported kubernetes distribution: $2"
+                exit 1
+                ;;
+        esac
+        shift 2
         ;;
     --ha-cluster)
         HA_CLUSTER=true
@@ -617,6 +626,13 @@ while true; do
     esac
 done
 
+if [ "${VERBOSE}" == "YES" ]; then
+    SILENT=
+else
+    SSH_OPTIONS="${SSH_OPTIONS} -q"
+    SCP_OPTIONS="${SCP_OPTIONS} -q"
+fi
+
 if [ "${GRPC_PROVIDER}" != "grpc" ] && [ "${GRPC_PROVIDER}" != "externalgrpc" ]; then
     echo_red_bold "Unsupported cloud provider: ${GRPC_PROVIDER}, only grpc|externalgrpc, exit"
     exit
@@ -739,18 +755,23 @@ if [ "${GRPC_PROVIDER}" != "grpc" ] && [ "${GRPC_PROVIDER}" != "externalgrpc" ];
     exit
 fi
 
-if [ "${USE_K3S}" == "true" ]; then
+if [ "${KUBERNETES_DISTRO}" == "k3s" ] || [ "${KUBERNETES_DISTRO}" == "rke2" ]; then
 	WANTED_KUBERNETES_VERSION=${KUBERNETES_VERSION}
 
-    K3S_CHANNEL=$(curl -s https://update.k3s.io/v1-release/channels)
+    if [ "${KUBERNETES_DISTRO}" == "rke2" ]; then
+        RANCHER_CHANNEL=$(curl -s https://update.rke2.io/v1-release/channels)
+    else
+        RANCHER_CHANNEL=$(curl -s https://update.k3s.io/v1-release/channels)
+    fi
+
     IFS=. read K8S_VERSION K8S_MAJOR K8S_MINOR <<< "${KUBERNETES_VERSION}"
-    KUBERNETES_VERSION=$(echo -n "$K3S_CHANNEL" | jq -r --arg KUBERNETES_VERSION "${K8S_VERSION}.${K8S_MAJOR}" '.data[]|select(.id == $KUBERNETES_VERSION)|.latest//""')
+    KUBERNETES_VERSION=$(echo -n "$RANCHER_CHANNEL" | jq -r --arg KUBERNETES_VERSION "${K8S_VERSION}.${K8S_MAJOR}" '.data[]|select(.id == $KUBERNETES_VERSION)|.latest//""')
 
 	if [ -z "${KUBERNETES_VERSION}" ]; then
-		KUBERNETES_VERSION=$(echo -n "$K3S_CHANNEL" | jq -r '.data[]|select(.id == "latest")|.latest//""')
-		echo_red_bold "k3s ${WANTED_KUBERNETES_VERSION} not available, use latest $KUBERNETES_VERSION"
+		KUBERNETES_VERSION=$(echo -n "$RANCHER_CHANNEL" | jq -r '.data[]|select(.id == "latest")|.latest//""')
+		echo_red_bold "${KUBERNETES_DISTRO} ${WANTED_KUBERNETES_VERSION} not available, use latest $KUBERNETES_VERSION"
 	else
-		echo_blue_bold "k3s ${WANTED_KUBERNETES_VERSION} found, use k3s $KUBERNETES_VERSION"
+		echo_blue_bold "${KUBERNETES_DISTRO} ${WANTED_KUBERNETES_VERSION} found, use k3s $KUBERNETES_VERSION"
 	fi
 fi
 
@@ -762,8 +783,8 @@ if [ -z "${TARGET_IMAGE}" ]; then
         exit
     fi
 
-	if [ "${USE_K3S}" == "true" ]; then
-        TARGET_IMAGE=$(echo -n "${ROOT_IMG_NAME}-k3s-${KUBERNETES_VERSION}-${SEED_ARCH}" | tr '+' '-')
+    if [ "${KUBERNETES_DISTRO}" == "k3s" ] || [ "${KUBERNETES_DISTRO}" == "rke2" ]; then
+        TARGET_IMAGE=$(echo -n "${ROOT_IMG_NAME}-${KUBERNETES_DISTRO}-${KUBERNETES_VERSION}-${SEED_ARCH}" | tr '+' '-')
     else
         TARGET_IMAGE="${ROOT_IMG_NAME}-cni-${CNI_PLUGIN}-${KUBERNETES_VERSION}-${CONTAINER_ENGINE}-${SEED_ARCH}"
     fi
@@ -1036,7 +1057,7 @@ if [ -z "${TARGET_IMAGE_AMI}" ]; then
     fi
 
     ./bin/create-image.sh \
-        --use-k3s=${USE_K3S} \
+        --k8s-distribution=${KUBERNETES_DISTRO} \
         --profile="${AWS_PROFILE}" \
         --region="${AWS_REGION}" \
         --cni-plugin-version="${CNI_PLUGIN_VERSION}" \
@@ -1165,7 +1186,7 @@ export TARGET_DEPLOY_LOCATION=${TARGET_DEPLOY_LOCATION}
 export TARGET_IMAGE=${TARGET_IMAGE}
 export TRANSPORT=${TRANSPORT}
 export UNREMOVABLENODERECHECKTIMEOUT=${UNREMOVABLENODERECHECKTIMEOUT}
-export USE_K3S=${USE_K3S}
+export KUBERNETES_DISTRO=${KUBERNETES_DISTRO}
 export USE_NGINX_GATEWAY=${USE_NGINX_GATEWAY}
 export USE_NLB=${USE_NLB}
 export USE_ZEROSSL=${USE_ZEROSSL}
@@ -1767,7 +1788,7 @@ function start_kubernes_on_instances() {
                     eval scp ${SCP_OPTIONS} ${TARGET_CLUSTER_LOCATION}/*  ${SEED_USER}@${IPADDR}:~/cluster ${SILENT}
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo join-cluster.sh \
-                        --use-k3s=${USE_K3S} \
+                        --k8s-distribution=${KUBERNETES_DISTRO} \
                         --join-master=${MASTER_IP} \
                         --cloud-provider=${CLOUD_PROVIDER} \
                         --use-external-etcd=${EXTERNAL_ETCD} \
@@ -1786,7 +1807,7 @@ function start_kubernes_on_instances() {
                     fi
 
                     ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo create-cluster.sh \
-                        --use-k3s=${USE_K3S} \
+                        --k8s-distribution=${KUBERNETES_DISTRO} \
                         --max-pods=${MAX_PODS} \
                         --ecr-password=${ECR_PASSWORD} \
                         --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
@@ -1820,7 +1841,8 @@ function start_kubernes_on_instances() {
                     eval scp ${SCP_OPTIONS} ${TARGET_CLUSTER_LOCATION}/*  ${SEED_USER}@${IPADDR}:~/cluster ${SILENT}
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo join-cluster.sh \
-                        --use-k3s=${USE_K3S} \
+                        --k8s-distribution=${KUBERNETES_DISTRO} \
+                        --max-pods=${MAX_PODS} \
                         --join-master=${MASTER_IP} \
                         --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
                         --control-plane=true \
@@ -1853,7 +1875,7 @@ function start_kubernes_on_instances() {
                     fi
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo create-cluster.sh \
-                        --use-k3s=${USE_K3S} \
+                        --k8s-distribution=${KUBERNETES_DISTRO} \
                         --max-pods=${MAX_PODS} \
                         --ecr-password=${ECR_PASSWORD} \
                         --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
@@ -1881,7 +1903,8 @@ function start_kubernes_on_instances() {
                     eval scp ${SCP_OPTIONS} ${TARGET_CLUSTER_LOCATION}/*  ${SEED_USER}@${IPADDR}:~/cluster ${SILENT}
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo join-cluster.sh \
-                        --use-k3s=${USE_K3S} \
+                        --k8s-distribution=${KUBERNETES_DISTRO} \
+                        --max-pods=${MAX_PODS} \
                         --join-master=${MASTER_IP} \
                         --control-plane=false \
                         --cloud-provider=${CLOUD_PROVIDER} \
@@ -2279,10 +2302,16 @@ else
     echo "address: $CONNECTTO" > ${TARGET_CONFIG_LOCATION}/${CLOUDPROVIDER_CONFIG}
 fi
 
+if [ "${KUBERNETES_DISTRO}" == "rke2" ]; then
+    SERVER_ADDRESS="${MASTER_IP%%:*}:9345"
+else
+    SERVER_ADDRESS="${MASTER_IP}"
+fi
+
 AUTOSCALER_CONFIG=$(cat <<EOF
 {
     "use-external-etcd": ${EXTERNAL_ETCD},
-    "use-k3s": ${USE_K3S},
+    "distribution": "${KUBERNETES_DISTRO}",
     "src-etcd-ssl-dir": "/etc/etcd/ssl",
     "dst-etcd-ssl-dir": "${ETCD_DST_DIR}",
     "kubernetes-pki-srcdir": "/etc/kubernetes/pki",
@@ -2308,15 +2337,13 @@ AUTOSCALER_CONFIG=$(cat <<EOF
         "createNodeGroup": false,
         "deleteNodeGroup": false
     },
-    "kubeadm": {
-        "address": "${MASTER_IP}",
+    "${KUBERNETES_DISTRO}": {
+        "address": "${SERVER_ADDRESS}",
         "token": "${TOKEN}",
         "ca": "sha256:${CACERT}",
         "extras-args": [
             "--ignore-preflight-errors=All"
-        ]
-    },
-    "k3s": {
+        ],
         "datastore-endpoint": "${ETCD_ENDPOINT}",
         "extras-commands": [
         ]
