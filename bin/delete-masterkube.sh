@@ -105,9 +105,9 @@ if [ "$FORCE" = "YES" ]; then
 
     for NODEINDEX in $(seq 0 $TOTALNODES)
     do
-        if [ $NODEINDEX = 0 ]; then
+        if [ $NODEINDEX -eq 0 ]; then
             MASTERKUBE_NODE="${MASTERKUBE}"
-        elif [[ $NODEINDEX > $CONTROLNODES ]]; then
+        elif [ $NODEINDEX -gt $CONTROLNODES ]; then
             NODEINDEX=$((NODEINDEX - $CONTROLNODES))
             MASTERKUBE_NODE="${NODEGROUP_NAME}-worker-0${NODEINDEX}"
         else

@@ -18,6 +18,7 @@ INSTANCENAME=$(aws ec2  describe-instances --region $REGION --instance-ids $INST
 IPADDR=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
 KUBERNETES_DISTRO=kubeadm
 ETCD_ENDPOINT=
+DELETE_CREDENTIALS_CONFIG=NO
 
 APISERVER_ADVERTISE_ADDRESS="${IPADDR}"
 APISERVER_ADVERTISE_PORT="6443"
@@ -25,7 +26,7 @@ APISERVER_ADVERTISE_PORT="6443"
 MASTER_IP=$(cat ./cluster/manager-ip)
 TOKEN=$(cat ./cluster/token)
 
-TEMP=$(getopt -o c:i:g: --long max-pods:,etcd-endpoint:,k8s-distribution:,allow-deployment:,join-master:,cloud-provider:,node-index:,use-external-etcd:,control-plane:,node-group: -n "$0" -- "$@")
+TEMP=$(getopt -o c:i:g: --long delete-credentials-provider:,max-pods:,etcd-endpoint:,k8s-distribution:,allow-deployment:,join-master:,cloud-provider:,node-index:,use-external-etcd:,control-plane:,node-group: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -68,6 +69,10 @@ while true; do
         MASTER_NODE_ALLOW_DEPLOYMENT=$2 
         shift 2
         ;;
+    --delete-credentials-provider)
+        DELETE_CREDENTIALS_CONFIG=$2
+        shift 2
+        ;;
     --k8s-distribution)
         case "$2" in
             kubeadm|k3s|rke2)
@@ -91,6 +96,15 @@ while true; do
         ;;
     esac
 done
+
+# Hack because k3s and rke2 1.28.4 don't set the good feature gates
+if [ "${DELETE_CREDENTIALS_CONFIG}" == "YES" ]; then
+    case "${KUBERNETES_DISTRO}" in
+        k3s|rke2)
+            rm -rf /var/lib/rancher/credentialprovider
+            ;;
+    esac
+fi
 
 CONTROL_PLANE_ENDPOINT=${MASTER_IP%%:*}
 

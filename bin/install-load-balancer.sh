@@ -69,29 +69,29 @@ function create_tcp_stream() {
     local TCP_PORT=$2
     local NGINX_CONF=$3
 
-    cat > $NGINX_CONF <<EOF
-    upstream $STREAM_NAME {
-        least_conn;
-EOF
+    TCP_PORT=$(echo -n $TCP_PORT | tr ',' ' ')
 
-    for CLUSTER_NODE in ${MASTER_NODES[*]}
+    for PORT in ${TCP_PORT}
     do
-        IFS=: read HOST IP <<< "$CLUSTER_NODE"
+        echo "  upstream ${STREAM_NAME}_${PORT} {" >> $NGINX_CONF
+        echo "    least_conn;" >> $NGINX_CONF
 
-        if [ "x${HOST}" != "x" ]; then
-            echo "        server ${IP}:${TCP_PORT} max_fails=3 fail_timeout=30s;" >> $NGINX_CONF
-        fi
+        for CLUSTER_NODE in ${CLUSTER_NODES[*]}
+        do
+            IFS=: read HOST IP <<< "$CLUSTER_NODE"
+
+            if [ -n ${HOST} ]; then
+                echo "    server ${IP}:${TCP_PORT} max_fails=3 fail_timeout=30s;" >> $NGINX_CONF
+            fi
+        done
+
+        echo "  }" >> $NGINX_CONF
+
+        echo "  server {" >> $NGINX_CONF
+        echo "    listen $NET_IP:${PORT};" >> $NGINX_CONF
+        echo "    proxy_pass ${$STREAM_NAME}_${PORT};" >> $NGINX_CONF
+        echo "  }" >> $NGINX_CONF
     done
-
-    cat >> $NGINX_CONF <<EOF
-    }
-
-    server {
-        listen $NET_IP:${TCP_PORT};
-
-        proxy_pass $STREAM_NAME;
-    }
-EOF
 }
 
 create_tcp_stream kubernetes_apiserver_lb ${APISERVER_ADVERTISE_PORT} /etc/nginx/tcpconf.d/apiserver.conf

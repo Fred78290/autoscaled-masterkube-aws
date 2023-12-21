@@ -42,6 +42,7 @@ export CONTAINER_ENGINE=docker
 export CONTAINER_RUNTIME=docker
 export CONTAINER_CTL=unix:///var/run/dockershim.sock
 export ETCD_ENDPOINT=
+export DELETE_CREDENTIALS_CONFIG=NO
 
 # /var/run/crio/crio.sock
 
@@ -51,7 +52,7 @@ else
 	ARCH="amd64"
 fi
 
-TEMP=$(getopt -o xh:i:p:n:c:k:s: --long etcd-endpoint:,k8s-distribution:,ecr-password:,allow-deployment:,container-runtime:,trace,control-plane-endpoint:,use-external-etcd:,cluster-nodes:,load-balancer-ip:,ha-cluster:,node-index:,private-zone-id:,private-zone-name:,cloud-provider:,max-pods:,node-group:,cert-extra-sans:,cni-plugin:,kubernetes-version: -n "$0" -- "$@")
+TEMP=$(getopt -o xh:i:p:n:c:k:s: --long delete-credentials-provider:,etcd-endpoint:,k8s-distribution:,ecr-password:,allow-deployment:,container-runtime:,trace,control-plane-endpoint:,use-external-etcd:,cluster-nodes:,load-balancer-ip:,ha-cluster:,node-index:,private-zone-id:,private-zone-name:,cloud-provider:,max-pods:,node-group:,cert-extra-sans:,cni-plugin:,kubernetes-version: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -80,6 +81,10 @@ while true; do
         ;;
     --allow-deployment)
         MASTER_NODE_ALLOW_DEPLOYMENT=$2
+        shift 2
+        ;;
+    --delete-credentials-provider)
+        DELETE_CREDENTIALS_CONFIG=$2
         shift 2
         ;;
     --k8s-distribution)
@@ -184,6 +189,15 @@ while true; do
     esac
 done
 
+# Hack because k3s and rke2 1.28.4 don't set the good feature gates
+if [ "${DELETE_CREDENTIALS_CONFIG}" == "YES" ]; then
+    case "${KUBERNETES_DISTRO}" in
+        k3s|rke2)
+            rm -rf /var/lib/rancher/credentialprovider
+            ;;
+    esac
+fi
+
 mkdir -p $CLUSTER_DIR
 mkdir -p /etc/kubernetes
 
@@ -196,11 +210,22 @@ else
 fi
 
 function collect_cert_sans() {
+  local LB_IP=
+  local CERT_EXTRA=
+  local CLUSTER_NODE=
+  local CLUSTER_IP=
+  local CLUSTER_HOST=
   local TLS_SNA=(
-    "${LOAD_BALANCER_IP}"
     "${CONTROL_PLANE_ENDPOINT_HOST}"
     "${CONTROL_PLANE_ENDPOINT_HOST%%.*}"
   )
+
+  for LB_IP in ${LOAD_BALANCER_IP[*]}
+  do
+    if [[ ! ${TLS_SNA[*]} =~ "${LB_IP}" ]]; then
+      TLS_SNA+=("${LB_IP}")
+    fi
+  done
 
   for CERT_EXTRA in ${CERT_EXTRA_SANS[*]} 
   do
@@ -211,26 +236,25 @@ function collect_cert_sans() {
 
   for CLUSTER_NODE in ${CLUSTER_NODES[*]}
   do
-    IFS=: read HOST IP <<< $CLUSTER_NODE
-    if [ -n ${IP} ] && [[ ! ${TLS_SNA[*]} =~ "${IP}" ]]; then
-      TLS_SNA+=("${CERT_EXTRA}")
+    IFS=: read CLUSTER_HOST CLUSTER_IP <<< $CLUSTER_NODE
+    if [ -n ${CLUSTER_IP} ] && [[ ! ${TLS_SNA[*]} =~ "${CLUSTER_IP}" ]]; then
+      TLS_SNA+=("${CLUSTER_IP}")
     fi
 
-    if [ -n ${HOST} ]; then
-      [[ ! ${TLS_SNA[*]} =~ "${HOST}" ]] && TLS_SNA+=("${HOST}")
-      HOST="${HOST%%.*}"
-      [[ ! ${TLS_SNA[*]} =~ "${HOST}" ]] && TLS_SNA+=("${HOST}")
+    if [ -n ${CLUSTER_HOST} ]; then
+      [[ ! ${TLS_SNA[*]} =~ "${CLUSTER_HOST}" ]] && TLS_SNA+=("${CLUSTER_HOST}")
+      CLUSTER_HOST="${CLUSTER_HOST%%.*}"
+      [[ ! ${TLS_SNA[*]} =~ "${CLUSTER_HOST}" ]] && TLS_SNA+=("${CLUSTER_HOST}")
     fi
   done
 
-  echo -n "${TLS_SNA[*]}" | tr ' ' ','
+  echo -n "${TLS_SNA[*]}"
 }
 
 CERT_SANS="$(collect_cert_sans)"
 
 if [ ${KUBERNETES_DISTRO} == "rke2" ]; then
   ANNOTE_MASTER=true
-  IFS=',' read -ra CERT_SANS <<<"${CERT_SANS}"
 
   cat > /etc/rancher/rke2/config.yaml <<EOF
 kubelet-arg:
@@ -249,7 +273,7 @@ disable:
 tls-san:
 EOF
 
-  for CERT_SAN in ${CERT_SANS[*]} 
+  for CERT_SAN in ${CERT_SANS} 
   do
     echo "  - ${CERT_SAN}" >> /etc/rancher/rke2/config.yaml
   done
@@ -309,7 +333,7 @@ EOF
 
 elif [ ${KUBERNETES_DISTRO} == "k3s" ]; then
   ANNOTE_MASTER=true
-
+  CERT_SANS=$(echo -n ${CERT_SANS} | tr ' ' ',')
   echo "K3S_MODE=server" > /etc/default/k3s
   echo "K3S_ARGS='--kubelet-arg=provider-id=aws://${ZONEID}/${INSTANCEID} --node-name=${NODENAME} --advertise-address=${APISERVER_ADVERTISE_ADDRESS} --advertise-port=${APISERVER_ADVERTISE_PORT} --tls-san=${CERT_SANS}'" > /etc/systemd/system/k3s.service.env
 
@@ -512,7 +536,7 @@ EOF
 
   echo "${APISERVER_ADVERTISE_ADDRESS} ${CONTROL_PLANE_ENDPOINT}" >> /etc/hosts
 
-  for CERT_SAN in ${CERT_SANS[*]} 
+  for CERT_SAN in ${CERT_SANS} 
   do
     echo "  - $CERT_SAN" >> ${KUBEADM_CONFIG}
   done

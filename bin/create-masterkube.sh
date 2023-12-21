@@ -76,6 +76,7 @@ export USE_NGINX_GATEWAY=NO
 export PREFER_SSH_PUBLICIP=NO
 export SILENT="&> /dev/null"
 export VERBOSE=NO
+export DELETE_CREDENTIALS_CONFIG=NO
 
 # aws region eu-west1
 export SEED_ARCH=amd64
@@ -84,6 +85,7 @@ export SEED_IMAGE_AMD64="ami-0333305f9719618c7"
 export SEED_IMAGE_ARM64="ami-03d568a0c334477dd"
 export SSL_LOCATION=${PWD}/etc/ssl
 export CONFIGURATION_LOCATION=${PWD}
+export AWS_TARGET_PORT=80,443,6443
 export AWSDEFS=${PWD}/bin/aws.defs
 
 # defined in private aws.defs
@@ -757,14 +759,19 @@ fi
 
 if [ "${KUBERNETES_DISTRO}" == "k3s" ] || [ "${KUBERNETES_DISTRO}" == "rke2" ]; then
 	WANTED_KUBERNETES_VERSION=${KUBERNETES_VERSION}
+    IFS=. read K8S_VERSION K8S_MAJOR K8S_MINOR <<< "${KUBERNETES_VERSION}"
+
+    if [ ${K8S_MAJOR} -eq 28 ] && [ ${K8S_MINOR} -eq 4 ]; then 
+        DELETE_CREDENTIALS_CONFIG=YES
+    fi
 
     if [ "${KUBERNETES_DISTRO}" == "rke2" ]; then
+        AWS_TARGET_PORT=80,443,6443,9345
         RANCHER_CHANNEL=$(curl -s https://update.rke2.io/v1-release/channels)
     else
         RANCHER_CHANNEL=$(curl -s https://update.k3s.io/v1-release/channels)
     fi
 
-    IFS=. read K8S_VERSION K8S_MAJOR K8S_MINOR <<< "${KUBERNETES_VERSION}"
     KUBERNETES_VERSION=$(echo -n "$RANCHER_CHANNEL" | jq -r --arg KUBERNETES_VERSION "${K8S_VERSION}.${K8S_MAJOR}" '.data[]|select(.id == $KUBERNETES_VERSION)|.latest//""')
 
 	if [ -z "${KUBERNETES_VERSION}" ]; then
@@ -1139,6 +1146,7 @@ export CONTROLNODES=${CONTROLNODES}
 export CONTROLPLANE_USE_PUBLICIP=${CONTROLPLANE_USE_PUBLICIP}
 export CORESTOTAL="${CORESTOTAL}"
 export DASHBOARD_HOSTNAME=${DASHBOARD_HOSTNAME}
+export DELETE_CREDENTIALS_CONFIG=${DELETE_CREDENTIALS_CONFIG}
 export DOMAIN_NAME=${DOMAIN_NAME}
 export EXPOSE_PUBLIC_CLUSTER=${EXPOSE_PUBLIC_CLUSTER}
 export EXTERNAL_ETCD=${EXTERNAL_ETCD}
@@ -1148,6 +1156,7 @@ export GODADDY_API_SECRET=${GODADDY_API_SECRET}
 export GRPC_PROVIDER=${GRPC_PROVIDER}
 export HA_CLUSTER=${HA_CLUSTER}
 export KUBECONFIG=${KUBECONFIG}
+export KUBERNETES_DISTRO=${KUBERNETES_DISTRO}
 export KUBERNETES_VERSION=${KUBERNETES_VERSION}
 export MASTER_INSTANCE_PROFILE_ARN=${MASTER_INSTANCE_PROFILE_ARN}
 export MASTER_PROFILE_NAME=${MASTER_PROFILE_NAME}
@@ -1186,7 +1195,6 @@ export TARGET_DEPLOY_LOCATION=${TARGET_DEPLOY_LOCATION}
 export TARGET_IMAGE=${TARGET_IMAGE}
 export TRANSPORT=${TRANSPORT}
 export UNREMOVABLENODERECHECKTIMEOUT=${UNREMOVABLENODERECHECKTIMEOUT}
-export KUBERNETES_DISTRO=${KUBERNETES_DISTRO}
 export USE_NGINX_GATEWAY=${USE_NGINX_GATEWAY}
 export USE_NLB=${USE_NLB}
 export USE_ZEROSSL=${USE_ZEROSSL}
@@ -1688,7 +1696,7 @@ function create_load_balancer() {
             --public-subnet-id="${PUBLIC_SUBNET_NLB_TARGET}" \
             --private-subnet-id="${PRIVATE_SUBNET_NLB_TARGET}" \
             --target-vpc-id=${TARGET_VPC} \
-            --target-port="80,443,6443" \
+            --target-port="${AWS_TARGET_PORT}" \
             --security-group=${VPC_PRIVATE_SECURITY_GROUPID} \
             --controlplane-instances-id="${CONTROLPLANE_INSTANCEID_NLB_TARGET}" \
             --public-instances-id="${PUBLIC_INSTANCEID_NLB_TARGET}" \
@@ -1789,6 +1797,7 @@ function start_kubernes_on_instances() {
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo join-cluster.sh \
                         --k8s-distribution=${KUBERNETES_DISTRO} \
+                        --delete-credentials-provider=${DELETE_CREDENTIALS_CONFIG} \
                         --join-master=${MASTER_IP} \
                         --cloud-provider=${CLOUD_PROVIDER} \
                         --use-external-etcd=${EXTERNAL_ETCD} \
@@ -1808,6 +1817,7 @@ function start_kubernes_on_instances() {
 
                     ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo create-cluster.sh \
                         --k8s-distribution=${KUBERNETES_DISTRO} \
+                        --delete-credentials-provider=${DELETE_CREDENTIALS_CONFIG} \
                         --max-pods=${MAX_PODS} \
                         --ecr-password=${ECR_PASSWORD} \
                         --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
@@ -1842,6 +1852,7 @@ function start_kubernes_on_instances() {
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo join-cluster.sh \
                         --k8s-distribution=${KUBERNETES_DISTRO} \
+                        --delete-credentials-provider=${DELETE_CREDENTIALS_CONFIG} \
                         --max-pods=${MAX_PODS} \
                         --join-master=${MASTER_IP} \
                         --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
@@ -1876,6 +1887,7 @@ function start_kubernes_on_instances() {
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo create-cluster.sh \
                         --k8s-distribution=${KUBERNETES_DISTRO} \
+                        --delete-credentials-provider=${DELETE_CREDENTIALS_CONFIG} \
                         --max-pods=${MAX_PODS} \
                         --ecr-password=${ECR_PASSWORD} \
                         --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
@@ -1904,6 +1916,7 @@ function start_kubernes_on_instances() {
 
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo join-cluster.sh \
                         --k8s-distribution=${KUBERNETES_DISTRO} \
+                        --delete-credentials-provider=${DELETE_CREDENTIALS_CONFIG} \
                         --max-pods=${MAX_PODS} \
                         --join-master=${MASTER_IP} \
                         --control-plane=false \
