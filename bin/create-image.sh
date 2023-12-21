@@ -23,7 +23,6 @@ SECURITY_GROUPID=
 SSH_KEY_PUB=~/.ssh/id_rsa.pub
 SSH_KEY_PRIV=~/.ssh/id_rsa
 MASTER_USE_PUBLICIP=true
-USE_K3S=false
 
 SSH_OPTIONS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 

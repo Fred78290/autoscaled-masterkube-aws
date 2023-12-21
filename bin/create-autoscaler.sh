@@ -1,6 +1,11 @@
 #/bin/bash
 LAUNCH_CA=$1
 
+if [ "${LAUNCH_CA}" == "NO" ]; then
+    exit
+fi
+
+
 CURDIR=$(dirname $0)
 
 pushd $CURDIR/../ &>/dev/null
@@ -31,21 +36,21 @@ if [ -z "${CLOUD_PROVIDER}" ]; then
 fi
 
 case $KUBERNETES_MINOR_RELEASE in
-    25)
-        CLUSTER_AUTOSCALER_VERSION=v1.25.6
-        AWS_AUTOSCALER_VERSION=v1.25.11
-        ;;
     26)
-        CLUSTER_AUTOSCALER_VERSION=v1.26.1
-        AWS_AUTOSCALER_VERSION=v1.26.6
+        CLUSTER_AUTOSCALER_VERSION=v1.26.11
+        AWS_AUTOSCALER_VERSION=v1.26.11
         ;;
     27)
-        CLUSTER_AUTOSCALER_VERSION=v1.27.2
-        AWS_AUTOSCALER_VERSION=v1.27.3
+        CLUSTER_AUTOSCALER_VERSION=v1.27.5
+        AWS_AUTOSCALER_VERSION=v1.27.9
         ;;
     28)
         CLUSTER_AUTOSCALER_VERSION=v1.28.2
-        AWS_AUTOSCALER_VERSION=v1.28.1
+        AWS_AUTOSCALER_VERSION=v1.28.4
+        ;;
+    29)
+        CLUSTER_AUTOSCALER_VERSION=v1.28.2
+        AWS_AUTOSCALER_VERSION=v1.29.0
         ;;
     *)
         echo "Former version aren't supported by aws autoscaler"

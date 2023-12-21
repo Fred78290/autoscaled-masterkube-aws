@@ -757,6 +757,17 @@ if [ "${GRPC_PROVIDER}" != "grpc" ] && [ "${GRPC_PROVIDER}" != "externalgrpc" ];
     exit
 fi
 
+if [ "${KUBERNETES_DISTRO}" == "rke2" ]; then
+    AWS_TARGET_PORT="${AWS_TARGET_PORT},9345"
+    EXTERNAL_ETCD=false
+fi
+
+if [ "${HA_CLUSTER}" = "true" ]; then
+    CONTROLNODES=3
+else
+    CONTROLNODES=1
+fi
+
 if [ "${KUBERNETES_DISTRO}" == "k3s" ] || [ "${KUBERNETES_DISTRO}" == "rke2" ]; then
 	WANTED_KUBERNETES_VERSION=${KUBERNETES_VERSION}
     IFS=. read K8S_VERSION K8S_MAJOR K8S_MINOR <<< "${KUBERNETES_VERSION}"
@@ -766,7 +777,6 @@ if [ "${KUBERNETES_DISTRO}" == "k3s" ] || [ "${KUBERNETES_DISTRO}" == "rke2" ]; 
     fi
 
     if [ "${KUBERNETES_DISTRO}" == "rke2" ]; then
-        AWS_TARGET_PORT=80,443,6443,9345
         RANCHER_CHANNEL=$(curl -s https://update.rke2.io/v1-release/channels)
     else
         RANCHER_CHANNEL=$(curl -s https://update.k3s.io/v1-release/channels)
@@ -1262,6 +1272,49 @@ echo "export FIRSTNODE_INDEX=$FIRSTNODE_INDEX" >> ${TARGET_CONFIG_LOCATION}/buil
 echo "export LASTNODE_INDEX=$LASTNODE_INDEX" >> ${TARGET_CONFIG_LOCATION}/buildenv
 echo "export CONTROLNODE_INDEX=$CONTROLNODE_INDEX" >> ${TARGET_CONFIG_LOCATION}/buildenv
 echo "export WORKERNODE_INDEX=$WORKERNODE_INDEX" >> ${TARGET_CONFIG_LOCATION}/buildenv
+
+#===========================================================================================================================================
+#
+#===========================================================================================================================================
+function collect_cert_sans() {
+    local LOAD_BALANCER_IP=$1
+    local CLUSTER_NODES=$2
+    local CERT_EXTRA_SANS=$3
+
+    local LB_IP=
+    local CERT_EXTRA=
+    local CLUSTER_NODE=
+    local CLUSTER_IP=
+    local CLUSTER_HOST=
+    local TLS_SNA=(
+        "${LOAD_BALANCER_IP}"
+    )
+
+    for CERT_EXTRA in $(echo ${CERT_EXTRA_SANS} | tr ',' ' ')
+    do
+        if [[ ! ${TLS_SNA[*]} =~ "${CERT_EXTRA}" ]]; then
+            TLS_SNA+=("${CERT_EXTRA}")
+        fi
+    done
+
+    for CLUSTER_NODE in $(echo ${CLUSTER_NODES} | tr ',' ' ')
+    do
+        IFS=: read CLUSTER_HOST CLUSTER_IP <<< "$CLUSTER_NODE"
+
+        if [ -n ${CLUSTER_IP} ] && [[ ! ${TLS_SNA[*]} =~ "${CLUSTER_IP}" ]]; then
+            TLS_SNA+=("${CLUSTER_IP}")
+        fi
+
+        if [ -n "${CLUSTER_HOST}" ]; then
+            if [[ ! ${TLS_SNA[*]} =~ "${CLUSTER_HOST}" ]]; then
+                TLS_SNA+=("${CLUSTER_HOST}")
+                TLS_SNA+=("${CLUSTER_HOST%%.*}")
+            fi
+        fi
+    done
+
+    echo -n "${TLS_SNA[*]}" | tr ' ' ','
+}
 
 #===========================================================================================================================================
 #
@@ -1786,6 +1839,7 @@ function start_kubernes_on_instances() {
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo install-load-balancer.sh \
                         --master-nodes="${MASTER_NODES}" \
                         --control-plane-endpoint=${CONTROL_PLANE_ENDPOINT} \
+                        --listen-port=${AWS_TARGET_PORT} \
                         --listen-ip="0.0.0.0" ${SILENT}
 
                     echo_blue_bold "Done configuring load balancer ${MASTERKUBE_NODE} instance in cluster mode"
@@ -1799,6 +1853,7 @@ function start_kubernes_on_instances() {
                         --k8s-distribution=${KUBERNETES_DISTRO} \
                         --delete-credentials-provider=${DELETE_CREDENTIALS_CONFIG} \
                         --join-master=${MASTER_IP} \
+                        --tls-san="${CERT_SANS}" \
                         --cloud-provider=${CLOUD_PROVIDER} \
                         --use-external-etcd=${EXTERNAL_ETCD} \
                         --node-group=${NODEGROUP_NAME} \
@@ -1808,12 +1863,6 @@ function start_kubernes_on_instances() {
                 # Start create first master node
                 elif [ ${INDEX} = ${CONTROLNODE_INDEX} ]; then
                     echo_blue_bold "Start kubernetes ${MASTERKUBE_NODE} instance master node number ${NODEINDEX} in cluster mode, kubernetes version=${KUBERNETES_VERSION}"
-
-                    if [ ${DOMAIN_NAME} != ${PRIVATE_DOMAIN_NAME} ]; then
-                        CERT_EXTRA_SANS="${MASTERKUBE}.${DOMAIN_NAME},${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}"
-                    else
-                        CERT_EXTRA_SANS="${MASTERKUBE}.${DOMAIN_NAME}"
-                    fi
 
                     ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo create-cluster.sh \
                         --k8s-distribution=${KUBERNETES_DISTRO} \
@@ -1827,7 +1876,7 @@ function start_kubernes_on_instances() {
                         --node-group=${NODEGROUP_NAME} \
                         --node-index=${NODEINDEX} \
                         --load-balancer-ip=${LOAD_BALANCER_IP} \
-                        --cert-extra-sans="${CERT_EXTRA_SANS}" \
+                        --tls-san="${CERT_SANS}" \
                         --container-runtime=${CONTAINER_ENGINE} \
                         --cloud-provider=${CLOUD_PROVIDER} \
                         --cluster-nodes="${CLUSTER_NODES}" \
@@ -1855,6 +1904,7 @@ function start_kubernes_on_instances() {
                         --delete-credentials-provider=${DELETE_CREDENTIALS_CONFIG} \
                         --max-pods=${MAX_PODS} \
                         --join-master=${MASTER_IP} \
+                        --tls-san="${CERT_SANS}" \
                         --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
                         --control-plane=true \
                         --cloud-provider=${CLOUD_PROVIDER} \
@@ -1879,12 +1929,6 @@ function start_kubernes_on_instances() {
                 elif [ ${INDEX} = ${CONTROLNODE_INDEX} ]; then
                     echo_blue_bold "Start kubernetes ${MASTERKUBE_NODE} single instance master node number ${NODEINDEX}, kubernetes version=${KUBERNETES_VERSION}"
 
-                    if [ "${DOMAIN_NAME}" != "${PRIVATE_DOMAIN_NAME}" ]; then
-                        CERT_EXTRA_SANS="${MASTERKUBE}.${DOMAIN_NAME},${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}"
-                    else
-                        CERT_EXTRA_SANS="${MASTERKUBE}.${DOMAIN_NAME}"
-                    fi
-
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo create-cluster.sh \
                         --k8s-distribution=${KUBERNETES_DISTRO} \
                         --delete-credentials-provider=${DELETE_CREDENTIALS_CONFIG} \
@@ -1893,7 +1937,7 @@ function start_kubernes_on_instances() {
                         --allow-deployment=${MASTER_NODE_ALLOW_DEPLOYMENT} \
                         --private-zone-id="${AWS_ROUTE53_ZONE_ID}" \
                         --private-zone-name="${PRIVATE_DOMAIN_NAME}" \
-                        --cert-extra-sans="${CERT_EXTRA_SANS}" \
+                        --tls-san="${CERT_SANS}" \
                         --container-runtime=${CONTAINER_ENGINE} \
                         --cloud-provider=${CLOUD_PROVIDER} \
                         --cluster-nodes="${CLUSTER_NODES}" \
@@ -1917,6 +1961,7 @@ function start_kubernes_on_instances() {
                     eval ssh ${SSH_OPTIONS} ${SEED_USER}@${IPADDR} sudo join-cluster.sh \
                         --k8s-distribution=${KUBERNETES_DISTRO} \
                         --delete-credentials-provider=${DELETE_CREDENTIALS_CONFIG} \
+                        --tls-san="${CERT_SANS}" \
                         --max-pods=${MAX_PODS} \
                         --join-master=${MASTER_IP} \
                         --control-plane=false \
@@ -2194,6 +2239,7 @@ CONTROLPLANE_INSTANCEID_NLB_TARGET=
 ETCD_ENDPOINT=
 
 EVAL=$(sed -i -e '/CLUSTER_NODES/d' -e '/NLB_DNS/d' -e '/MASTER_NODES/d' ${TARGET_CONFIG_LOCATION}/buildenv)
+CERT_SANS=$(collect_cert_sans "${LOAD_BALANCER_IP}" "${CLUSTER_NODES}" "${MASTERKUBE}.${DOMAIN_NAME},${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}")
 
 CONTROL_PLANE_ENDPOINT=${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}
 

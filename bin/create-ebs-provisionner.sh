@@ -22,10 +22,16 @@ if [ $CLOUD_PROVIDER = "external" ]; then
       27)
           AWS_CONTROLLER_VERSION=v1.27.1
           ;;
+      28)
+          AWS_CONTROLLER_VERSION=v1.28.1
+          ;;
+      29)
+          AWS_CONTROLLER_VERSION=v1.28.1
+          ;;
   esac
 
 
-  if [ $USE_K3S == true ]; then
+ if [ "${KUBERNETES_DISTRO}" == "k3s" ] || [ "${KUBERNETES_DISTRO}" == "rke2" ]; then
     cat >> ${ETC_DIR}/aws-cloud-controller.yaml <<EOF
 args:
   - --v=2

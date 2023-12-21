@@ -38,6 +38,7 @@ export LOAD_BALANCER_IP=($IPADDR)
 export EXTERNAL_ETCD=false
 export NODEINDEX=0
 export CLUSTER_NODES=()
+export CERT_SANS=
 export CONTAINER_ENGINE=docker
 export CONTAINER_RUNTIME=docker
 export CONTAINER_CTL=unix:///var/run/dockershim.sock
@@ -52,7 +53,7 @@ else
 	ARCH="amd64"
 fi
 
-TEMP=$(getopt -o xh:i:p:n:c:k:s: --long delete-credentials-provider:,etcd-endpoint:,k8s-distribution:,ecr-password:,allow-deployment:,container-runtime:,trace,control-plane-endpoint:,use-external-etcd:,cluster-nodes:,load-balancer-ip:,ha-cluster:,node-index:,private-zone-id:,private-zone-name:,cloud-provider:,max-pods:,node-group:,cert-extra-sans:,cni-plugin:,kubernetes-version: -n "$0" -- "$@")
+TEMP=$(getopt -o xh:i:p:n:c:k:s: --long tls-san:,delete-credentials-provider:,etcd-endpoint:,k8s-distribution:,ecr-password:,allow-deployment:,container-runtime:,trace,control-plane-endpoint:,use-external-etcd:,cluster-nodes:,load-balancer-ip:,ha-cluster:,node-index:,private-zone-id:,private-zone-name:,cloud-provider:,max-pods:,node-group:,cni-plugin:,kubernetes-version: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
@@ -148,8 +149,8 @@ while true; do
         shift 2
         ;;
 
-    -s | --cert-extra-sans)
-        IFS=, read -a CERT_EXTRA_SANS <<< "$2"
+    -tls-san)
+        CERT_SAN="$2"
         shift 2
         ;;
 
@@ -209,50 +210,6 @@ else
   NODENAME=$HOSTNAME
 fi
 
-function collect_cert_sans() {
-  local LB_IP=
-  local CERT_EXTRA=
-  local CLUSTER_NODE=
-  local CLUSTER_IP=
-  local CLUSTER_HOST=
-  local TLS_SNA=(
-    "${CONTROL_PLANE_ENDPOINT_HOST}"
-    "${CONTROL_PLANE_ENDPOINT_HOST%%.*}"
-  )
-
-  for LB_IP in ${LOAD_BALANCER_IP[*]}
-  do
-    if [[ ! ${TLS_SNA[*]} =~ "${LB_IP}" ]]; then
-      TLS_SNA+=("${LB_IP}")
-    fi
-  done
-
-  for CERT_EXTRA in ${CERT_EXTRA_SANS[*]} 
-  do
-    if [[ ! ${TLS_SNA[*]} =~ "${CERT_EXTRA}" ]]; then
-      TLS_SNA+=("${CERT_EXTRA}")
-    fi
-  done
-
-  for CLUSTER_NODE in ${CLUSTER_NODES[*]}
-  do
-    IFS=: read CLUSTER_HOST CLUSTER_IP <<< $CLUSTER_NODE
-    if [ -n ${CLUSTER_IP} ] && [[ ! ${TLS_SNA[*]} =~ "${CLUSTER_IP}" ]]; then
-      TLS_SNA+=("${CLUSTER_IP}")
-    fi
-
-    if [ -n ${CLUSTER_HOST} ]; then
-      [[ ! ${TLS_SNA[*]} =~ "${CLUSTER_HOST}" ]] && TLS_SNA+=("${CLUSTER_HOST}")
-      CLUSTER_HOST="${CLUSTER_HOST%%.*}"
-      [[ ! ${TLS_SNA[*]} =~ "${CLUSTER_HOST}" ]] && TLS_SNA+=("${CLUSTER_HOST}")
-    fi
-  done
-
-  echo -n "${TLS_SNA[*]}"
-}
-
-CERT_SANS="$(collect_cert_sans)"
-
 if [ ${KUBERNETES_DISTRO} == "rke2" ]; then
   ANNOTE_MASTER=true
 
@@ -273,7 +230,7 @@ disable:
 tls-san:
 EOF
 
-  for CERT_SAN in ${CERT_SANS} 
+  for CERT_SAN in $(echo -n ${CERT_SANS} | tr ',' ' ')
   do
     echo "  - ${CERT_SAN}" >> /etc/rancher/rke2/config.yaml
   done
@@ -333,7 +290,7 @@ EOF
 
 elif [ ${KUBERNETES_DISTRO} == "k3s" ]; then
   ANNOTE_MASTER=true
-  CERT_SANS=$(echo -n ${CERT_SANS} | tr ' ' ',')
+
   echo "K3S_MODE=server" > /etc/default/k3s
   echo "K3S_ARGS='--kubelet-arg=provider-id=aws://${ZONEID}/${INSTANCEID} --node-name=${NODENAME} --advertise-address=${APISERVER_ADVERTISE_ADDRESS} --advertise-port=${APISERVER_ADVERTISE_PORT} --tls-san=${CERT_SANS}'" > /etc/systemd/system/k3s.service.env
 
@@ -536,7 +493,7 @@ EOF
 
   echo "${APISERVER_ADVERTISE_ADDRESS} ${CONTROL_PLANE_ENDPOINT}" >> /etc/hosts
 
-  for CERT_SAN in ${CERT_SANS} 
+  for CERT_SAN in $(echo -n ${CERT_SANS} | tr ',' ' ')
   do
     echo "  - $CERT_SAN" >> ${KUBEADM_CONFIG}
   done
@@ -707,8 +664,8 @@ kubectl annotate node ${NODENAME} \
   --overwrite
 
 if [ ${MASTER_NODE_ALLOW_DEPLOYMENT} = "YES" ];then
-  kubectl taint node ${NODENAME} node-role.kubernetes.io/master:NoSchedule-
-elif [ "${USE_K3S}" == "true" ]; then
+  kubectl taint node ${HOSTNAME} node-role.kubernetes.io/master:NoSchedule- node-role.kubernetes.io/control-plane:NoSchedule-
+elif [ "${KUBERNETES_DISTRO}" == "k3s" ]; then
   kubectl taint node ${HOSTNAME} node-role.kubernetes.io/master:NoSchedule node-role.kubernetes.io/control-plane:NoSchedule
 fi
 

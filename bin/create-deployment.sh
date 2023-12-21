@@ -21,6 +21,9 @@ else
 fi
 
 # Create Pods
+echo_title " Create autoscaler"
+create-autoscaler.sh ${LAUNCH_CA}
+
 echo_title " Create EBS provisionner"
 create-ebs-provisionner.sh
 
@@ -47,11 +50,6 @@ create-helloworld.sh
 
 echo_title " Create External DNS"
 create-external-dns.sh
-
-if [ "${LAUNCH_CA}" != "NO" ]; then
-    echo_title " Create autoscaler"
-    create-autoscaler.sh ${LAUNCH_CA}
-fi
 
 echo_title "Save templates into cluster"
 

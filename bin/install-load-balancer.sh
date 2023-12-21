@@ -2,26 +2,28 @@
 
 set -e
 
-export DEBIAN_FRONTEND=noninteractive
-
 CONTROL_PLANE_ENDPOINT=
-MASTER_NODES=
+CLUSTER_NODES=
 NET_IP=0.0.0.0
-APISERVER_ADVERTISE_PORT=6443
+LOAD_BALANCER_PORT=6443
 
-TEMP=$(getopt -o l:p:n: --long listen-ip:,master-nodes:,control-plane-endpoint: -n "$0" -- "$@")
+TEMP=$(getopt -o l:c:p:n: --long listen-port:,listen-ip:,cluster-nodes:,control-plane-endpoint: -n "$0" -- "$@")
 
 eval set -- "${TEMP}"
 
 # extract options and their arguments into variables.
 while true; do
     case "$1" in
-    -p | --control-plane-endpoint)
+    -c | --control-plane-endpoint)
         CONTROL_PLANE_ENDPOINT="$2"
         shift 2
         ;;
-    -n | --master-nodes)
-        MASTER_NODES="$2"
+    -p | --listen-port)
+        LOAD_BALANCER_PORT=$2
+        shift 2
+        ;;
+    -n | --cluster-nodes)
+        CLUSTER_NODES="$2"
         shift 2
         ;;
     -l | --listen-ip)
@@ -40,10 +42,17 @@ while true; do
     esac
 done
 
+IFS=, read -a CLUSTER_NODES <<< "${CLUSTER_NODES}"
+
 echo "127.0.0.1 ${CONTROL_PLANE_ENDPOINT}" >> /etc/hosts
 
-apt update
-apt dist-upgrade -y
+for CLUSTER_NODE in ${CLUSTER_NODES[*]}
+do
+    IFS=: read HOST IP <<< "$CLUSTER_NODE"
+
+    echo "$IP   $HOST" >> /etc/hosts
+done
+
 apt install nginx -y || echo "Need to reconfigure NGINX"
 
 # Remove http default listening
@@ -59,9 +68,6 @@ stream {
 }
 EOF
 
-# Buod stream TCP
-IFS=, read -a MASTER_NODES <<< "$MASTER_NODES"
-
 mkdir -p /etc/nginx/tcpconf.d
 
 function create_tcp_stream() {
@@ -71,30 +77,32 @@ function create_tcp_stream() {
 
     TCP_PORT=$(echo -n $TCP_PORT | tr ',' ' ')
 
+    touch ${NGINX_CONF}
+
     for PORT in ${TCP_PORT}
     do
-        echo "  upstream ${STREAM_NAME}_${PORT} {" >> $NGINX_CONF
-        echo "    least_conn;" >> $NGINX_CONF
+        echo "  upstream ${STREAM_NAME}_${PORT} {" >> ${NGINX_CONF}
+        echo "    least_conn;" >> ${NGINX_CONF}
 
         for CLUSTER_NODE in ${CLUSTER_NODES[*]}
         do
             IFS=: read HOST IP <<< "$CLUSTER_NODE"
 
             if [ -n ${HOST} ]; then
-                echo "    server ${IP}:${TCP_PORT} max_fails=3 fail_timeout=30s;" >> $NGINX_CONF
+                echo "    server ${IP}:${PORT} max_fails=3 fail_timeout=30s;" >> ${NGINX_CONF}
             fi
         done
 
-        echo "  }" >> $NGINX_CONF
+        echo "  }" >> ${NGINX_CONF}
 
-        echo "  server {" >> $NGINX_CONF
-        echo "    listen $NET_IP:${PORT};" >> $NGINX_CONF
-        echo "    proxy_pass ${$STREAM_NAME}_${PORT};" >> $NGINX_CONF
-        echo "  }" >> $NGINX_CONF
+        echo "  server {" >> ${NGINX_CONF}
+        echo "    listen $NET_IP:${PORT};" >> ${NGINX_CONF}
+        echo "    proxy_pass ${STREAM_NAME}_${PORT};" >> ${NGINX_CONF}
+        echo "  }" >> ${NGINX_CONF}
     done
 }
 
-create_tcp_stream kubernetes_apiserver_lb ${APISERVER_ADVERTISE_PORT} /etc/nginx/tcpconf.d/apiserver.conf
+create_tcp_stream apiserver_lb ${LOAD_BALANCER_PORT} /etc/nginx/tcpconf.d/apiserver.conf
 create_tcp_stream https_lb 443 /etc/nginx/tcpconf.d/https.conf
 create_tcp_stream http_lb 80 /etc/nginx/tcpconf.d/http.conf
 
