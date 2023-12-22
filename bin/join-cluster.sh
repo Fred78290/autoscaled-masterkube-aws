@@ -74,8 +74,8 @@ while true; do
         DELETE_CREDENTIALS_CONFIG=$2
         shift 2
         ;;
-    -tls-san)
-        CERT_SAN="$2"
+    --tls-san)
+        CERT_SANS="$2"
         shift 2
         ;;
     --k8s-distribution)

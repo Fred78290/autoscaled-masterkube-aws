@@ -149,8 +149,8 @@ while true; do
         shift 2
         ;;
 
-    -tls-san)
-        CERT_SAN="$2"
+    --tls-san)
+        CERT_SANS="$2"
         shift 2
         ;;
 
@@ -272,7 +272,7 @@ EOF
 
   openssl x509 -pubkey -in /var/lib/rancher/rke2/server/tls/server-ca.crt | openssl rsa -pubin -outform der 2>/dev/null | openssl dgst -sha256 -hex | sed 's/^.* //' | tr -d '\n' > $CLUSTER_DIR/ca.cert
 
-  sed -i -e "s/127.0.0.1/${CONTROL_PLANE_ENDPOINT_HOST}/g" -e "s/default/k8s-${HOSTNAME}-admin@${NODEGROUP_NAME}/g" $CLUSTER_DIR/config
+  sed -i -e "s/127.0.0.1/${CONTROL_PLANE_ENDPOINT}/g" -e "s/default/k8s-${HOSTNAME}-admin@${NODEGROUP_NAME}/g" $CLUSTER_DIR/config
 
   rm -rf $CLUSTER_DIR/kubernetes/pki/temporary-certs
 
