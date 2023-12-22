@@ -350,7 +350,7 @@ EOF
 if [ "${KUBERNETES_DISTRO}" == "rke2" ]; then
     echo "prepare rke2 image"
 
-    cat >> "${ISODIR}/prepare-image.sh" <<"EOF"
+    cat >> "${CACHE}/prepare-image.sh" <<"EOF"
     curl -sfL https://get.rke2.io | INSTALL_RKE2_CHANNEL="${KUBERNETES_VERSION}" sh -
 
     pushd /usr/local/bin
