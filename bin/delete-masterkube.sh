@@ -1,6 +1,6 @@
 #!/bin/bash
 CURDIR=$(dirname $0)
-NODEGROUP_NAME="aws-ca-k8s"
+NODEGROUP_NAME="aws-ca-rke2"
 MASTERKUBE=${NODEGROUP_NAME}-masterkube
 CONTROLNODES=3
 WORKERNODES=3

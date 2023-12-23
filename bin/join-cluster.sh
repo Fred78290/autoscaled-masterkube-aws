@@ -262,9 +262,9 @@ if [ "$HA_CLUSTER" = "true" ]; then
         "master=true" \
         --overwrite
 
-    if [ "${MASTER_NODE_ALLOW_DEPLOYMENT}" = "YES" ];then
+    if [ "${MASTER_NODE_ALLOW_DEPLOYMENT}" = "YES" ]; then
         kubectl taint node ${NODENAME} node-role.kubernetes.io/master:NoSchedule- node-role.kubernetes.io/master:NoSchedule-
-    elif [ "${KUBERNETES_DISTRO}" == "k3s" ]; then; then
+    elif [ "${KUBERNETES_DISTRO}" == "k3s" ]; then
         kubectl taint node ${NODENAME} node-role.kubernetes.io/master:NoSchedule node-role.kubernetes.io/control-plane:NoSchedule
     fi
 else

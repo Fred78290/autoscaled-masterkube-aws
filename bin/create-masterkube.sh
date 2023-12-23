@@ -25,14 +25,15 @@ pushd ${CURDIR}/../ &> /dev/null
 export PATH=${PWD}/bin:${PATH}
 export CACHE=$HOME/.local/aws/cache
 export SCHEME="aws"
-export NODEGROUP_NAME="aws-ca-k8s"
-export MASTERKUBE="${NODEGROUP_NAME}-masterkube"
-export DASHBOARD_HOSTNAME=masterkube-aws-dashboard
 export SSH_PRIVATE_KEY=~/.ssh/id_rsa
 export SSH_PUBLIC_KEY="${SSH_PRIVATE_KEY}.pub"
 export KUBERNETES_DISTRO=kubeadm
 export KUBERNETES_VERSION=$(curl -sSL https://dl.k8s.io/release/stable.txt)
 export KUBECONFIG=${HOME}/.kube/config
+export NODEGROUP_SET=NO
+export NODEGROUP_NAME="aws-ca-${KUBERNETES_DISTRO}"
+export MASTERKUBE="${NODEGROUP_NAME}-masterkube"
+export DASHBOARD_HOSTNAME=masterkube-aws-dashboard
 export CNI_PLUGIN_VERSION=v1.2.0
 export CNI_PLUGIN=aws
 export CLOUD_PROVIDER=aws
@@ -488,6 +489,7 @@ while true; do
     --node-group)
         NODEGROUP_NAME="$2"
         MASTERKUBE="${NODEGROUP_NAME}-masterkube"
+        NODEGROUP_SET=YES
         shift 2
         ;;
 
@@ -627,6 +629,11 @@ while true; do
         ;;
     esac
 done
+
+if [ ${NODEGROUP_SET} == "NO" ]; then
+    NODEGROUP_NAME="aws-ca-${KUBERNETES_DISTRO}"
+    MASTERKUBE="${NODEGROUP_NAME}-masterkube"
+fi
 
 if [ "${VERBOSE}" == "YES" ]; then
     SILENT=
@@ -2369,6 +2376,12 @@ else
     SERVER_ADDRESS="${MASTER_IP}"
 fi
 
+if [ "${DELETE_CREDENTIALS_CONFIG}" == "YES" ]; then
+    DELETE_CREDENTIALS_CONFIG=true
+else
+    DELETE_CREDENTIALS_CONFIG=false
+fi
+
 AUTOSCALER_CONFIG=$(cat <<EOF
 {
     "use-external-etcd": ${EXTERNAL_ETCD},
@@ -2406,6 +2419,7 @@ AUTOSCALER_CONFIG=$(cat <<EOF
             "--ignore-preflight-errors=All"
         ],
         "datastore-endpoint": "${ETCD_ENDPOINT}",
+        "delete-credentials-provider": ${DELETE_CREDENTIALS_CONFIG},
         "extras-commands": [
         ]
     },

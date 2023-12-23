@@ -652,7 +652,11 @@ echo "= Pull cni image"
 echo "==============================================================================================================================="
 
 if [ "$CNI_PLUGIN" = "aws" ]; then
-    if [ ${KUBERNETES_MINOR_RELEASE} -gt 24 ]; then
+    if [ ${KUBERNETES_MINOR_RELEASE} -gt 26 ]; then
+		AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.15.5/config/master/aws-k8s-cni.yaml
+    elif [ ${KUBERNETES_MINOR_RELEASE} -gt 25 ]; then
+		AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.14.1/config/master/aws-k8s-cni.yaml
+    elif [ ${KUBERNETES_MINOR_RELEASE} -gt 24 ]; then
 		AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.12.6/config/master/aws-k8s-cni.yaml
     elif [ ${KUBERNETES_MINOR_RELEASE} -gt 22 ]; then
 		AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.11.5/config/master/aws-k8s-cni.yaml

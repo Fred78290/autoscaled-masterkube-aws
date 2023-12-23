@@ -570,7 +570,11 @@ fi
       KUBERNETES_MINOR_RELEASE=$(kubectl version -o json | jq -r .serverVersion.minor)
       UBUNTU_VERSION_ID=$(cat /etc/os-release | grep VERSION_ID | tr -d '"' | cut -d '=' -f 2 | cut -d '.' -f 1)
 
-      if [ $KUBERNETES_MINOR_RELEASE -gt 24 ]; then
+      if [ $KUBERNETES_MINOR_RELEASE -gt 26 ]; then
+        AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.15.5/config/master/aws-k8s-cni.yaml
+      elif [ $KUBERNETES_MINOR_RELEASE -gt 25 ]; then
+        AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.14.1/config/master/aws-k8s-cni.yaml
+      elif [ $KUBERNETES_MINOR_RELEASE -gt 24 ]; then
         AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.12.1/config/master/aws-k8s-cni.yaml
       elif [ $KUBERNETES_MINOR_RELEASE -gt 22 ]; then
         AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.11/config/master/aws-k8s-cni.yaml
