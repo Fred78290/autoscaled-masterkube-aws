@@ -20,9 +20,11 @@ else
         --from-file ${TARGET_CLUSTER_LOCATION}/kubernetes/pki/etcd | kubectl apply --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -f -
 fi
 
-exit
 
 # Create Pods
+echo_title " Create AWS controller"
+create-aws-controller.sh
+
 echo_title " Create autoscaler"
 create-autoscaler.sh ${LAUNCH_CA}
 
