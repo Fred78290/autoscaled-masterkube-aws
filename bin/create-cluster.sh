@@ -570,7 +570,9 @@ fi
       KUBERNETES_MINOR_RELEASE=$(kubectl version -o json | jq -r .serverVersion.minor)
       UBUNTU_VERSION_ID=$(cat /etc/os-release | grep VERSION_ID | tr -d '"' | cut -d '=' -f 2 | cut -d '.' -f 1)
 
-      if [ $KUBERNETES_MINOR_RELEASE -gt 26 ]; then
+      if [ ${KUBERNETES_MINOR_RELEASE} -gt 27 ]; then
+        AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.16.0/config/master/aws-k8s-cni.yaml
+      elif [ $KUBERNETES_MINOR_RELEASE -gt 26 ]; then
         AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.15.5/config/master/aws-k8s-cni.yaml
       elif [ $KUBERNETES_MINOR_RELEASE -gt 25 ]; then
         AWS_CNI_URL=https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/v1.14.1/config/master/aws-k8s-cni.yaml
@@ -625,7 +627,7 @@ fi
 
       echo "Install canal network"
 
-      kubectl apply -f "https://raw.githubusercontent.com/projectcalico/calico/v3.24.5/manifests/canal.yaml" 2>&1
+      kubectl apply -f "https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/canal.yaml" 2>&1
 
   elif [ "$CNI_PLUGIN" = "kube" ]; then
 
