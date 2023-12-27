@@ -1588,6 +1588,8 @@ EOF
 }
 EOF
 )
+        add_host "${IPADDR} ${MASTERKUBE_NODE}.${PRIVATE_DOMAIN_NAME}"
+
         # Record kubernetes node in Route53 DNS
         if [ -n "${AWS_ROUTE53_ZONE_ID}" ]; then
 
@@ -1699,6 +1701,7 @@ EOF
         aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} --hosted-zone-id ${AWS_ROUTE53_ZONE_ID} \
             --change-batch file://${TARGET_CONFIG_LOCATION}/dns-nlb.json > /dev/null
 
+        add_host "${PRIVATE_NLB_DNS} ${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}"
     fi
 
     if [ -n "${PUBLIC_DOMAIN_NAME}" ]; then
@@ -2218,6 +2221,10 @@ if [ "${USE_NLB}" = "NO" ] || [ "${HA_CLUSTER}" = "false" ]; then
             --hosted-zone-id ${AWS_ROUTE53_ZONE_ID} \
             --change-batch file://${TARGET_CONFIG_LOCATION}/dns-nlb.json > /dev/null
 
+        for IPADDR in $(echo ${LOAD_BALANCER_IP} | tr ',' ' ')
+        do
+            add_host "${IPADDR} ${MASTERKUBE}.${PRIVATE_DOMAIN_NAME}"
+        done
     fi
 
     if [ -n "${PUBLIC_DOMAIN_NAME}" ]; then

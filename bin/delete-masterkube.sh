@@ -184,6 +184,7 @@ do
         aws route53 change-resource-record-sets --profile ${AWS_PROFILE_ROUTE53} --region ${AWS_REGION} \
             --hosted-zone-id ${ZONEID} \
             --change-batch file://${FILE} &> /dev/null
+        delete_host "${DNSNAME}"
     fi
 done
 

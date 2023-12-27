@@ -1,5 +1,23 @@
 SSH_OPTIONS="-o BatchMode=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 SCP_OPTIONS="${SSH_OPTIONS} -p -r"
+OSDISTRO=$(uname -s)
+
+function add_host() {
+    if [ "${ADD_TO_ETCHOST}" == "YES" ]; then
+        local LINE=
+
+        for ARG in $@
+        do
+            if [ -n "${LINE}" ]; then
+                LINE="${LINE} ${ARG}"
+            else
+                LINE="${ARG}     "
+            fi
+        done
+
+        sudo bash -c "echo '${LINE}' >> /etc/hosts"
+    fi
+}
 
 function verbose() {
     if [ ${VERBOSE} = "YES" ]; then
@@ -92,4 +110,13 @@ if [ "$(uname -s)" == "Darwin" ]; then
     else
         alias getopt=/opt/homebrew/opt/gnu-getopt/bin/getopt
     fi
+
+    function delete_host() {
+        sudo gsed -i "/$1/d" /etc/hosts
+    }
+
+else
+    function delete_host() {
+        sudo sed -i "/$1/d" /etc/hosts
+    }
 fi
