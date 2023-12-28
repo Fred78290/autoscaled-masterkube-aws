@@ -82,6 +82,8 @@
 							"$EXTERNAL_ETCD_ARGS",
                             "$USE_VANILLA_GRPC_ARGS",
 							"$USE_CONTROLER_MANAGER_ARGS",
+                            "--max-memory=$MAX_MEMORY",
+                            "--max-cpus=$MAX_VCPUS",
 							"--src-etcd-ssl-dir=/etc/etcd/ssl",
 							"--dst-etcd-ssl-dir=/etc/etcd/ssl",
 							"--config=/etc/cluster/kubernetes-aws-autoscaler.json",

@@ -24,6 +24,8 @@ export AUTOSCALER_REGISTRY=$REGISTRY
 export CLOUDPROVIDER_CONFIG=/etc/cluster/grpc-config.json
 export USE_VANILLA_GRPC_ARGS=--no-use-vanilla-grpc
 export USE_CONTROLER_MANAGER_ARGS="--use-controller-manager"
+export MAX_MEMORY=$(($(echo -n $MEMORYTOTAL | cut -d ':' -f 2) * 1024))
+export MAX_VCPUS=$(echo -n ${CORESTOTAL} | cut -d ':' -f 2)
 
 if [ "${GRPC_PROVIDER}" = "externalgrpc" ]; then
     USE_VANILLA_GRPC_ARGS=--use-vanilla-grpc
