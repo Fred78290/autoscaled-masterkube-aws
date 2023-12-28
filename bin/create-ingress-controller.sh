@@ -4,7 +4,7 @@ CURDIR=$(dirname $0)
 
 pushd $CURDIR/../ &>/dev/null
 
-export K8NAMESPACE=ingress
+export K8NAMESPACE=ingress-nginx
 export ETC_DIR=${TARGET_DEPLOY_LOCATION}/ingress
 export KUBERNETES_TEMPLATE=./templates/ingress
 
