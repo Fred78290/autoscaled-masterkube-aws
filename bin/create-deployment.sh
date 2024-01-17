@@ -1,10 +1,10 @@
-#!/bin/bash
-
 # Recopy config file on master node
 kubectl create configmap config-cluster-autoscaler -n kube-system --dry-run=client -o yaml \
 	--kubeconfig=${TARGET_CLUSTER_LOCATION}/config \
 	--from-file ${TARGET_CONFIG_LOCATION}/${CLOUDPROVIDER_CONFIG} \
-	--from-file ${TARGET_CONFIG_LOCATION}/kubernetes-aws-autoscaler.json | kubectl apply --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -f -
+	--from-file ${TARGET_CONFIG_LOCATION}/provider.json \
+	--from-file ${TARGET_CONFIG_LOCATION}/machines.json \
+	--from-file ${TARGET_CONFIG_LOCATION}/autoscaler.json | kubectl apply --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -f -
 
 kubectl create configmap kubernetes-pki -n kube-system --dry-run=client -o yaml \
 	--kubeconfig=${TARGET_CLUSTER_LOCATION}/config \
@@ -21,37 +21,37 @@ else
 fi
 
 # Create Pods
-echo_title " Create AWS controller"
+echo_title "Create AWS controller"
 create-aws-controller.sh
 
 echo_title " Create autoscaler"
 create-autoscaler.sh ${LAUNCH_CA}
 
-echo_title " Create EBS provisionner"
+echo_title "Create EBS provisionner"
 create-ebs-provisionner.sh
 
-echo_title " Create EFS provisionner"
+echo_title "Create EFS provisionner"
 create-efs-provisionner.sh
 
-echo_title " Create CERT Manager"
+echo_title "Create CERT Manager"
 create-cert-manager.sh
 
-echo_title " Create Ingress Controller"
+echo_title "Create Ingress Controller"
 create-ingress-controller.sh
 
-echo_title " Create Kubernetes dashboard"
+echo_title "Create Kubernetes dashboard"
 create-dashboard.sh
 
-echo_title " Create Kubernetes metric scraper"
+echo_title "Create Kubernetes metric scraper"
 create-metrics.sh
 
-echo_title " Create Rancher"
+echo_title "Create Rancher"
 create-rancher.sh
 
-echo_title " Create Sample hello"
+echo_title "Create Sample hello"
 create-helloworld.sh
 
-echo_title " Create External DNS"
+echo_title "Create External DNS"
 create-external-dns.sh
 
 echo_title "Save templates into cluster"

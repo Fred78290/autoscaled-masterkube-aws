@@ -33,7 +33,7 @@ EOF
     sed -e "s/__ZONE_TYPE__/${ZONE_TYPE}/g" \
         -e "s/__AWS_REGION__/${AWS_REGION}/g" \
         -e "s/__DOMAIN_NAME__/${DOMAIN_NAME}/g" \
-        $KUBERNETES_TEMPLATE/deploy-route53.yaml | tee $ETC_DIR/deploy.yaml | kubectl apply -f - --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
+        $KUBERNETES_TEMPLATE/deploy-route53.yaml | tee $ETC_DIR/deploy.yaml | kubectl apply --kubeconfig=${TARGET_CLUSTER_LOCATION}/config-f -
 
 elif [ -n "${GODADDY_API_KEY}" ]; then
 
@@ -41,6 +41,6 @@ elif [ -n "${GODADDY_API_KEY}" ]; then
         -e "s/__GODADDY_API_KEY__/$GODADDY_API_KEY/g" \
         -e "s/__GODADDY_API_SECRET__/$GODADDY_API_SECRET/g" \
         -e "s/__NODEGROUP_NAME__/$NODEGROUP_NAME/g" \
-        $KUBERNETES_TEMPLATE/deploy-godaddy.yaml | tee $ETC_DIR/deploy.yaml | kubectl apply -f - --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
+        $KUBERNETES_TEMPLATE/deploy-godaddy.yaml | tee $ETC_DIR/deploy.yaml | kubectl apply --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -f -
 
 fi

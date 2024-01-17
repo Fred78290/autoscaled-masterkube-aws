@@ -1,0 +1,48 @@
+{
+	"use-external-etcd": ${EXTERNAL_ETCD},
+	"distribution": "${KUBERNETES_DISTRO}",
+	"src-etcd-ssl-dir": "/etc/etcd/ssl",
+	"dst-etcd-ssl-dir": "${ETCD_DST_DIR}",
+	"kubernetes-pki-srcdir": "/etc/kubernetes/pki",
+	"kubernetes-pki-dstdir": "/etc/kubernetes/pki",
+	"listen": "${LISTEN}",
+	"secret": "${SCHEME}",
+	"minNode": ${MINNODES},
+	"maxNode": ${MAXNODES},
+	"maxPods": ${MAX_PODS},
+	"node-name-prefix": "autoscaled",
+	"managed-name-prefix": "managed",
+	"controlplane-name-prefix": "master",
+	"nodePrice": 0.0,
+	"podPrice": 0.0,
+	"image": "${TARGET_IMAGE}",
+	"cloud-provider": "${CLOUD_PROVIDER}",
+	"optionals": {
+		"pricing": false,
+		"getAvailableMachineTypes": false,
+		"newNodeGroup": false,
+		"templateNodeInfo": false,
+		"createNodeGroup": false,
+		"deleteNodeGroup": false
+	},
+	"${KUBERNETES_DISTRO}": {
+		"address": "${SERVER_ADDRESS}",
+		"token": "${TOKEN}",
+		"ca": "sha256:${CACERT}",
+		"extras-args": [
+			"--ignore-preflight-errors=All"
+		],
+		"datastore-endpoint": "${ETCD_ENDPOINT}",
+		"delete-credentials-provider": ${DELETE_CREDENTIALS_CONFIG},
+		"extras-commands": [
+		]
+	},
+	"default-machine": "${AUTOSCALE_MACHINE}",
+	"sync-folder": {
+	},
+	"ssh-infos" : {
+		"wait-ssh-ready-seconds": 180,
+		"user": "${KUBERNETES_USER}",
+		"ssh-private-key": "${SSH_PRIVATE_KEY_LOCAL}"
+	}
+}

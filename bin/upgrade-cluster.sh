@@ -86,13 +86,13 @@ SSH_PRIVATE_KEY=${KEEP_SSH_PRIVATE_KEY}
 SSH_PUBLIC_KEY=${KEEP_SSH_PUBLIC_KEY}
 TARGET_IMAGE=${KEEP_TARGET_IMAGE}
 KUBERNETES_VERSION=${KEEP_KUBERNETES_VERSION}
-KUBECONFIG=${KEPP_KUBECONFIG}
+KUBECONFIG=${KEEP_KUBECONFIG}
 
 if [ ! -f ${TARGET_CLUSTER_LOCATION}/config ]; then
 	cp ${HOME}/.kube/config ${TARGET_CLUSTER_LOCATION}/config
 fi
 
-    cat ${AWSDEFS} > ${TARGET_CONFIG_LOCATION}/buildenv
+cat ${SCHEMEDEFS} > ${TARGET_CONFIG_LOCATION}/buildenv
 
 cat > ${TARGET_CONFIG_LOCATION}/buildenv <<EOF
 export AUTOSCALE_MACHINE=${AUTOSCALE_MACHINE}
@@ -115,6 +115,8 @@ export GODADDY_API_SECRET=${GODADDY_API_SECRET}
 export GRPC_PROVIDER=${GRPC_PROVIDER}
 export HA_CLUSTER=${HA_CLUSTER}
 export KUBECONFIG=${KUBECONFIG}
+export KUBERNETES_DISTRO=${KUBERNETES_DISTRO}
+export KUBERNETES_USER=${KUBERNETES_USER}
 export KUBERNETES_VERSION=${KUBERNETES_VERSION}
 export MASTER_INSTANCE_PROFILE_ARN=${MASTER_INSTANCE_PROFILE_ARN}
 export MASTER_PROFILE_NAME=${MASTER_PROFILE_NAME}
@@ -142,7 +144,6 @@ export SCHEME=${SCHEME}
 export SEED_ARCH=${SEED_ARCH}
 export SEED_IMAGE_AMD64=${SEED_IMAGE_AMD64}
 export SEED_IMAGE_ARM64=${SEED_IMAGE_ARM64}
-export SEED_USER=${SEED_USER}
 export SSH_KEYNAME=${SSH_KEYNAME}
 export SSH_PRIVATE_KEY=${SSH_PRIVATE_KEY}
 export SSH_PRIVATE_KEY=${SSH_PRIVATE_KEY}
@@ -153,7 +154,6 @@ export TARGET_DEPLOY_LOCATION=${TARGET_DEPLOY_LOCATION}
 export TARGET_IMAGE=${TARGET_IMAGE}
 export TRANSPORT=${TRANSPORT}
 export UNREMOVABLENODERECHECKTIMEOUT=${UNREMOVABLENODERECHECKTIMEOUT}
-export KUBERNETES_DISTRO=${KUBERNETES_DISTRO}
 export USE_NGINX_GATEWAY=${USE_NGINX_GATEWAY}
 export USE_NLB=${USE_NLB}
 export USE_ZEROSSL=${USE_ZEROSSL}
@@ -168,9 +168,8 @@ export ZEROSSL_EAB_HMAC_SECRET=${ZEROSSL_EAB_HMAC_SECRET}
 export ZEROSSL_EAB_KID=${ZEROSSL_EAB_KID}
 EOF
 
-AWS_AUTOSCALER_CONFIG=$(cat ${TARGET_CONFIG_LOCATION}/kubernetes-aws-autoscaler.json)
-
-echo -n ${AWS_AUTOSCALER_CONFIG} | jq ".image = \"${TARGET_IMAGE}\" | .aws.\"${NODEGROUP_NAME}\".\"ami\" = \"${TARGET_IMAGE_AMI}\"" > ${TARGET_CONFIG_LOCATION}/kubernetes-aws-autoscaler.json
+PROVIDER_AUTOSCALER_CONFIG=$(cat ${TARGET_CONFIG_LOCATION}/provider.json)
+echo -n ${PROVIDER_AUTOSCALER_CONFIG} | jq --arg TARGET_IMAGE "${TARGET_IMAGE_AMI}" '.ami = ${TARGET_IMAGE}' > ${TARGET_CONFIG_LOCATION}/provider.json
 
 source ${PWD}/bin/create-deployment.sh
 
@@ -205,11 +204,11 @@ else
 	IFS=. read VERSION MAJOR MINOR <<< "$KUBERNETES_VERSION"
 
 	# Update tools
-	echo_title "Update kubernetes binaries to ${KUBERNETES_VERSION}"
+	echo_title "Update kubernetes binaries"
 	ADDRESSES=$(kubectl get no --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -o json | jq -r '.items[].status.addresses[]|select(.type == "InternalIP")|.address')
 	for ADDR in ${ADDRESSES}
 	do
-		ssh ${SSH_OPTIONS} ${SEED_USER}@${ADDR} <<EOF
+		ssh ${SSH_OPTIONS} ${KUBERNETES_USER}@${ADDR} <<EOF
 			SEED_ARCH=\$([ "\$(uname -m)" == "aarch64" ] && echo -n arm64 || echo -n amd64)
 			cd /usr/local/bin
 			sudo curl -sL --remote-name-all https://storage.googleapis.com/kubernetes-release/release/${KUBERNETES_VERSION}/bin/linux/\${SEED_ARCH}/{kubeadm,kubectl,kube-proxy}
@@ -223,7 +222,7 @@ EOF
 	for ADDR in ${ADDRESSES}
 	do
 		echo_blue_bold "Update node: ${ADDR}"
-		ssh ${SSH_OPTIONS} ${SEED_USER}@${ADDR} <<EOF
+		ssh ${SSH_OPTIONS} ${KUBERNETES_USER}@${ADDR} <<EOF
 			if [ ${MAJOR} -ge 27 ] && [ -f /etc/kubernetes/kubeadm-config.yaml ]; then
 				sudo sed -i '/container-runtime:/d' /etc/kubernetes/kubeadm-config.yaml
 			fi
@@ -238,7 +237,7 @@ EOF
 	for ADDR in ${ADDRESSES}
 	do
 		echo_blue_bold "Update node: ${ADDR}"
-		ssh ${SSH_OPTIONS} ${SEED_USER}@${ADDR} <<EOF
+		ssh ${SSH_OPTIONS} ${KUBERNETES_USER}@${ADDR} <<EOF
 		sudo kubeadm upgrade node
 EOF
 	done
@@ -258,7 +257,7 @@ EOF
 
 		kubectl cordon ${NODENAME} --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
 
-		ssh ${SSH_OPTIONS} ${SEED_USER}@${ADDR} <<EOF
+		ssh ${SSH_OPTIONS} ${KUBERNETES_USER}@${ADDR} <<EOF
 			if [ ${MAJOR} -ge 27 ] && [ -f /var/lib/kubelet/kubeadm-flags.env ]; then
 				sudo sed -i -E 's/--container-runtime=\w+//' /var/lib/kubelet/kubeadm-flags.env
 			fi 

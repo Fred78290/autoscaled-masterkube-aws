@@ -9,7 +9,7 @@ pushd ${TARGET_DEPLOY_LOCATION} &>/dev/null
 
 export K8NAMESPACE=cattle-system
 
-kubectl create ns ${K8NAMESPACE} --dry-run=client --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -o yaml | kubectl apply -f -
+kubectl create ns ${K8NAMESPACE} --dry-run=client --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -o yaml | kubectl apply --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -f -
 
 if [ ${KUBERNETES_MINOR_RELEASE} -lt 27 ]; then
     REPO=rancher-latest/rancher
@@ -25,18 +25,18 @@ else
 fi
 
 cat > ${TARGET_DEPLOY_LOCATION}/rancher/rancher.yaml <<EOF
-hostname: rancher-aws.$DOMAIN_NAME
+hostname: rancher-$SCHEME.$DOMAIN_NAME
 ingress:
-    ingressClassName: nginx
-    extraAnnotations:
-        "cert-manager.io/cluster-issuer": cert-issuer-prod
-        "external-dns.alpha.kubernetes.io/register": 'true'
-        "external-dns.alpha.kubernetes.io/target": "$MASTERKUBE.$DOMAIN_NAME"
-        "external-dns.alpha.kubernetes.io/hostname": "rancher-aws.$DOMAIN_NAME"
-        "external-dns.alpha.kubernetes.io/ttl": '600'
-    tls:
-        source: secret
-        secretName: tls-rancher-ingress
+  ingressClassName: nginx
+  extraAnnotations:
+    "cert-manager.io/cluster-issuer": cert-issuer-prod
+    "external-dns.alpha.kubernetes.io/register": 'true'
+    "external-dns.alpha.kubernetes.io/ttl": '600'
+    "external-dns.alpha.kubernetes.io/target": "$MASTERKUBE.$DOMAIN_NAME"
+    "external-dns.alpha.kubernetes.io/hostname": "rancher-$SCHEME.$DOMAIN_NAME"
+  tls:
+    source: secret
+    secretName: tls-rancher-ingress
 tls: ingress
 replicas: 1
 global:
@@ -65,7 +65,7 @@ done
 echo
 
 echo_title "Rancher setup URL"
-echo_blue_bold "https://rancher-aws.$DOMAIN_NAME/dashboard/?setup=${BOOTSTRAP_SECRET}"
+echo_blue_bold "https://rancher-$SCHEME.$DOMAIN_NAME/dashboard/?setup=${BOOTSTRAP_SECRET}" | tee ${TARGET_DEPLOY_LOCATION}/rancher/rancher.log
 echo_line
 echo
 

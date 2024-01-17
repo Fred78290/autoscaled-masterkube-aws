@@ -24,12 +24,12 @@
 			"spec": {
 				"priorityClassName": "system-cluster-critical",
 				"serviceAccountName": "cluster-autoscaler",
-                "securityContext": {
-                    "runAsUser": 65532,
-                    "runAsGroup": 65532,
-                    "fsGroup": 65532,
-                    "fsGroupChangePolicy": "OnRootMismatch"
-                },
+				"securityContext": {
+					"runAsUser": 65532,
+					"runAsGroup": 65532,
+					"fsGroup": 65532,
+					"fsGroupChangePolicy": "OnRootMismatch"
+				},
 				"nodeSelector": {
 					"master": "true"
 				},
@@ -47,13 +47,13 @@
 					{
 						"image": "busybox",
 						"name": "cluster-autoscaler-init",
-                        "securityContext": {
-                            "privileged": true
-                        },
+						"securityContext": {
+							"privileged": true
+						},
 						"command":[
 							"/bin/sh",
 							"-c",
-							"rm -f /var/run/cluster-autoscaler/aws.sock"
+							"rm -f /var/run/cluster-autoscaler/autoscaler.sock"
 						],
 						"volumeMounts": [
 							{
@@ -65,8 +65,8 @@
 				],
 				"containers": [
 					{
-						"image": "$REGISTRY/aws-autoscaler:$AWS_AUTOSCALER_VERSION",
-						"name": "aws-autoscaler",
+						"image": "$REGISTRY/kubernetes-cloud-autoscaler:$CLOUD_AUTOSCALER_VERSION",
+						"name": "kubernetes-cloud-autoscaler",
 						"resources": {
 							"limits": {
 								"cpu": "100m",
@@ -78,16 +78,20 @@
 							}
 						},
 						"command": [
-							"/usr/local/bin/aws-autoscaler",
+							"/usr/local/bin/kubernetes-cloud-autoscaler",
 							"$EXTERNAL_ETCD_ARGS",
-                            "$USE_VANILLA_GRPC_ARGS",
+							"$USE_VANILLA_GRPC_ARGS",
 							"$USE_CONTROLER_MANAGER_ARGS",
-                            "--max-memory=$MAX_MEMORY",
-                            "--max-cpus=$MAX_VCPUS",
+							"--max-memory=$MAX_MEMORY",
+							"--max-cpus=$MAX_VCPUS",
+							"--listen=unix:/var/run/cluster-autoscaler/autoscaler.sock",
 							"--src-etcd-ssl-dir=/etc/etcd/ssl",
 							"--dst-etcd-ssl-dir=/etc/etcd/ssl",
-							"--config=/etc/cluster/kubernetes-aws-autoscaler.json",
-							"--save=/var/run/cluster-autoscaler/aws-autoscaler-state.json",
+							"--config=/etc/cluster/autoscaler.json",
+							"--machines=/etc/cluster/machines.json",
+							"--provider=${SCHEME}",
+							"--provider-congig=/etc/cluster/provider.json",
+							"--save=/var/run/cluster-autoscaler/state.json",
 							"--log-level=info"
 						],
 						"imagePullPolicy": "Always",
@@ -102,7 +106,7 @@
 							},
 							{
 								"name": "autoscaler-ssh-keys",
-                                "mountPath": "/etc/ssh"
+								"mountPath": "/etc/ssh"
 							},
 							{
 								"name": "etcd-ssl",
@@ -115,7 +119,7 @@
 						]
 					},
 					{
-                        "image": "$AUTOSCALER_REGISTRY/cluster-autoscaler:$CLUSTER_AUTOSCALER_VERSION",
+						"image": "$AUTOSCALER_REGISTRY/cluster-autoscaler:$CLUSTER_AUTOSCALER_VERSION",
 						"name": "cluster-autoscaler",
 						"resources": {
 							"limits": {
@@ -131,8 +135,8 @@
 							"./cluster-autoscaler",
 							"--v=1",
 							"--stderrthreshold=info",
-                            "--cloud-provider=${GRPC_PROVIDER}",
-                            "--cloud-config=${CLOUDPROVIDER_CONFIG}",
+							"--cloud-provider=${GRPC_PROVIDER}",
+							"--cloud-config=${CLOUDPROVIDER_CONFIG}",
 							"--nodes=$MINNODES:$MAXNODES:true/$NODEGROUP_NAME",
 							"--max-nodes-total=$MAXTOTALNODES",
 							"--cores-total=$CORESTOTAL",
@@ -188,14 +192,14 @@
 						"name": "autoscaler-ssh-keys",
 						"secret": {
 							"secretName": "autoscaler-ssh-keys",
-                            "defaultMode": 416
+							"defaultMode": 416
 						}
 					},
 					{
 						"name": "etcd-ssl",
 						"secret": {
 							"secretName": "etcd-ssl",
-                            "defaultMode": 416
+							"defaultMode": 416
 						}
 					},
 					{

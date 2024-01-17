@@ -1,4 +1,8 @@
 #!/bin/bash
+CURDIR=$(dirname $0)
+
+source $CURDIR/common.sh
+
 function deploy {
     echo "Create $ETC_DIR/$1.json"
 
@@ -23,7 +27,7 @@ EOF")
     kubectl apply -f $ETC_DIR/cluster-issuer.json --kubeconfig=${TARGET_CLUSTER_LOCATION}/config
 }
 
-echo "Install cert-manager"
+echo_blue_bold "Install cert-manager"
 
 export K8NAMESPACE=cert-manager
 export ETC_DIR=${TARGET_DEPLOY_LOCATION}/cert-manager
@@ -53,7 +57,7 @@ esac
 mkdir -p $ETC_DIR
 
 kubectl create namespace $K8NAMESPACE --dry-run=client -o yaml \
-    --kubeconfig=${TARGET_CLUSTER_LOCATION}/config | kubectl apply --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -f -
+	--kubeconfig=${TARGET_CLUSTER_LOCATION}/config | kubectl apply --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -f -
 
 helm repo add jetstack https://charts.jetstack.io
 helm repo add godaddy-webhook https://fred78290.github.io/cert-manager-webhook-godaddy/
@@ -66,7 +70,7 @@ helm upgrade -i $K8NAMESPACE jetstack/cert-manager \
         --set installCRDs=true
 
 if [ -z "${PUBLIC_DOMAIN_NAME}" ]; then
-    echo "Register CA self signed issuer"
+    echo_blue_bold "Register CA self signed issuer"
     kubectl create secret generic ca-key-pair --dry-run=client -o yaml \
         --kubeconfig=${TARGET_CLUSTER_LOCATION}/config \
         --namespace $K8NAMESPACE \
@@ -77,18 +81,19 @@ if [ -z "${PUBLIC_DOMAIN_NAME}" ]; then
 else
     if [ "${USE_ZEROSSL}" = "YES" ]; then
         kubectl create secret generic zero-ssl-eabsecret -n $K8NAMESPACE --dry-run=client -o yaml \
+			--kubeconfig=${TARGET_CLUSTER_LOCATION}/config \
 			--from-literal secret="${ZEROSSL_EAB_HMAC_SECRET}" | kubectl apply --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -f -
     fi
 
     if [ -n "${AWS_ROUTE53_PUBLIC_ZONE_ID}" ]; then
-        echo "Register route53 issuer"
+        echo_blue_bold "Register route53 issuer"
         kubectl create secret generic route53-credentials-secret -n $K8NAMESPACE --dry-run=client -o yaml \
 			--kubeconfig=${TARGET_CLUSTER_LOCATION}/config \
 			--from-literal=secret=${AWS_ROUTE53_SECRETKEY} | kubectl apply --kubeconfig=${TARGET_CLUSTER_LOCATION}/config -f -
 
         deploy cluster-issuer-route53
     elif [ -n ${GODADDY_API_KEY} ]; then
-        echo "Register godaddy issuer"
+        echo_blue_bold "Register godaddy issuer"
         helm upgrade -i godaddy-webhook godaddy-webhook/godaddy-webhook \
 			--kubeconfig=${TARGET_CLUSTER_LOCATION}/config \
             --version ${GODADDY_WEBHOOK_VERSION} \

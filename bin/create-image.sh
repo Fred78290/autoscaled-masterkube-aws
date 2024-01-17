@@ -12,7 +12,7 @@ CURDIR=$(dirname $0)
 FORCE=NO
 INSTANCE_IMAGE=t3a.small
 SEED_ARCH=amd64
-SEED_USER=ubuntu
+KUBERNETES_USER=ubuntu
 SEED_IMAGE=
 TARGET_IMAGE=
 CONTAINER_ENGINE=docker
@@ -48,7 +48,7 @@ while true ; do
         -i|--custom-image) TARGET_IMAGE="$2" ; shift 2;;
         -i|--cni-plugin-version) CNI_PLUGIN_VERSION=$2 ; shift 2;;
         -c|--cni-plugin) CNI_PLUGIN=$2 ; shift 2;;
-        -u|--user) SEED_USER=$2 ; shift 2;;
+        -u|--user) KUBERNETES_USER=$2 ; shift 2;;
         -v|--kubernetes-version) KUBERNETES_VERSION=$2 ; shift 2;;
 
         --ami) SEED_IMAGE=$2 ; shift 2;;
@@ -777,14 +777,14 @@ echo_blue_dot_title "Wait for ${TARGET_IMAGE} ssh ready for on ${IP_TYPE} IP=${I
 while :
 do
     echo_blue_dot
-    scp ${SSH_OPTIONS} -o ConnectTimeout=1 "${CACHE}/prepare-image.sh" "${SEED_USER}@${IPADDR}":~ 2>/dev/null && break
+    scp ${SSH_OPTIONS} -o ConnectTimeout=1 "${CACHE}/prepare-image.sh" "${KUBERNETES_USER}@${IPADDR}":~ 2>/dev/null && break
     sleep 1
 done
 
 echo
 
-ssh ${SSH_OPTIONS} -t "${SEED_USER}@${IPADDR}" sudo ./prepare-image.sh
-ssh ${SSH_OPTIONS} -t "${SEED_USER}@${IPADDR}" rm ./prepare-image.sh
+ssh ${SSH_OPTIONS} -t "${KUBERNETES_USER}@${IPADDR}" sudo ./prepare-image.sh
+ssh ${SSH_OPTIONS} -t "${KUBERNETES_USER}@${IPADDR}" rm ./prepare-image.sh
 
 aws ec2 stop-instances --profile ${AWS_PROFILE} --region ${AWS_REGION} --instance-ids "${LAUNCHED_ID}" &> /dev/null
 

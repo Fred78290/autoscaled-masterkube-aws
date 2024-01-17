@@ -1,31 +1,36 @@
 #!/bin/bash
-CNI=aws
+CERT_SANS=
 CLOUD_PROVIDER=aws
-SCHEME="aws"
-NODEGROUP_NAME="aws-ca-k8s"
-MASTERKUBE="${NODEGROUP_NAME}-masterkube"
 CLUSTER_DIR=/etc/cluster
-HA_CLUSTER=
+CLUSTER_NODES=
+CNI=aws
+CONTROL_PLANE_ENDPOINT_ADDR=
+CONTROL_PLANE_ENDPOINT_HOST=
+CONTROL_PLANE_ENDPOINT=
+DELETE_CREDENTIALS_CONFIG=NO
+ETCD_ENDPOINT=
 EXTERNAL_ETCD=NO
-NODEINDEX=0
+HA_CLUSTER=false
+INSTANCEID=
+INSTANCENAME=$HOSTNAME
+KUBERNETES_DISTRO=kubeadm
+MASTER_IP=$(cat ./cluster/manager-ip)
 MASTER_NODE_ALLOW_DEPLOYMENT=NO
 MAX_PODS=110
+NET_IF=$(ip route get 1|awk '{print $5;exit}')
+NODEGROUP_NAME=
+NODEINDEX=0
+REGION=home
+TOKEN=$(cat ./cluster/token)
+ZONEID=office
+
 LOCALHOSTNAME=$(curl -s http://169.254.169.254/latest/meta-data/local-hostname)
 INSTANCEID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
 ZONEID=$(curl http://169.254.169.254/latest/meta-data/placement/availability-zone)
 REGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)
 INSTANCENAME=$(aws ec2  describe-instances --region $REGION --instance-ids $INSTANCEID | jq -r '.Reservations[0].Instances[0].Tags[]|select(.Key == "Name")|.Value')
-IPADDR=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
-KUBERNETES_DISTRO=kubeadm
-ETCD_ENDPOINT=
-DELETE_CREDENTIALS_CONFIG=NO
-CERT_SANS=
-
-APISERVER_ADVERTISE_ADDRESS="${IPADDR}"
+APISERVER_ADVERTISE_ADDRESS=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
 APISERVER_ADVERTISE_PORT="6443"
-
-MASTER_IP=$(cat ./cluster/manager-ip)
-TOKEN=$(cat ./cluster/token)
 
 TEMP=$(getopt -o c:i:g: --long tls-san:,delete-credentials-provider:,max-pods:,etcd-endpoint:,k8s-distribution:,allow-deployment:,join-master:,cloud-provider:,node-index:,use-external-etcd:,control-plane:,node-group: -n "$0" -- "$@")
 
@@ -34,6 +39,10 @@ eval set -- "${TEMP}"
 # extract options and their arguments into variables.
 while true; do
     case "$1" in
+    -c|--cloud-provider)
+        CLOUD_PROVIDER="$2"
+        shift 2
+        ;;
     -g|--node-group)
         NODEGROUP_NAME="$2"
         shift 2
@@ -42,8 +51,8 @@ while true; do
         NODEINDEX="$2"
         shift 2
         ;;
-    -c|--cloud-provider)
-        CLOUD_PROVIDER="$2"
+    --tls-san)
+        CERT_SANS=$2
         shift 2
         ;;
     --control-plane)
@@ -72,10 +81,6 @@ while true; do
         ;;
     --delete-credentials-provider)
         DELETE_CREDENTIALS_CONFIG=$2
-        shift 2
-        ;;
-    --tls-san)
-        CERT_SANS="$2"
         shift 2
         ;;
     --k8s-distribution)
@@ -119,6 +124,8 @@ cp cluster/config /etc/kubernetes/admin.conf
 
 export KUBECONFIG=/etc/kubernetes/admin.conf
 
+PROVIDERID=aws://${ZONEID}/${INSTANCEID}
+
 if [ "$CLOUD_PROVIDER" == "aws" ]; then
     NODENAME=$LOCALHOSTNAME
 else
@@ -133,10 +140,11 @@ if [ ${KUBERNETES_DISTRO} == "rke2" ]; then
 kubelet-arg:
   - cloud-provider=external
   - fail-swap-on=false
-  - provider-id=aws://${ZONEID}/${INSTANCEID}
+  - provider-id=${PROVIDERID}
   - max-pods=${MAX_PODS}
 node-name: ${NODENAME}
 server: https://${MASTER_IP%%:*}:9345
+advertise-address: ${APISERVER_ADVERTISE_ADDRESS}
 token: ${TOKEN}
 EOF
 
@@ -174,7 +182,7 @@ EOF
 
 elif [ ${KUBERNETES_DISTRO} == "k3s" ]; then
     ANNOTE_MASTER=true
-    echo "K3S_ARGS='--kubelet-arg=provider-id=aws://${ZONEID}/${INSTANCEID} --kubelet-arg=max-pods=${MAX_PODS} --node-name=${NODENAME} --server=https://${MASTER_IP} --token=${TOKEN}'" > /etc/systemd/system/k3s.service.env
+    echo "K3S_ARGS='--kubelet-arg=provider-id=${PROVIDERID} --kubelet-arg=max-pods=${MAX_PODS} --node-name=${NODENAME} --server=https://${MASTER_IP} --token=${TOKEN}'" > /etc/systemd/system/k3s.service.env
 
     if [ "$HA_CLUSTER" = "true" ]; then
         echo "K3S_MODE=server" > /etc/default/k3s
@@ -237,17 +245,19 @@ else
             --node-name "${NODENAME}" \
             --token "${TOKEN}" \
             --discovery-token-ca-cert-hash "sha256:${CACERT}" \
+            --apiserver-advertise-address ${APISERVER_ADVERTISE_ADDRESS} \
             --control-plane
     else
         kubeadm join ${MASTER_IP} \
             --node-name "${NODENAME}" \
             --token "${TOKEN}" \
-            --discovery-token-ca-cert-hash "sha256:${CACERT}"
+            --discovery-token-ca-cert-hash "sha256:${CACERT}" \
+            --apiserver-advertise-address ${APISERVER_ADVERTISE_ADDRESS}
     fi
 
     cat > patch.yaml <<EOF
-    spec:
-        providerID: 'aws://${ZONEID}/${INSTANCEID}'
+spec:
+  providerID: '${PROVIDERID}'
 EOF
 
     kubectl patch node ${NODENAME} --patch-file patch.yaml
@@ -259,6 +269,8 @@ if [ "$HA_CLUSTER" = "true" ]; then
         "node-role.kubernetes.io/master=${ANNOTE_MASTER}" \
         "topology.kubernetes.io/region=${REGION}" \
         "topology.kubernetes.io/zone=${ZONEID}" \
+        "topology.csi.vmware.com/k8s-region=${REGION}" \
+        "topology.csi.vmware.com/k8s-zone=${ZONEID}" \
         "master=true" \
         --overwrite
 
@@ -273,6 +285,8 @@ else
         "node-role.kubernetes.io/worker=${ANNOTE_MASTER}" \
         "topology.kubernetes.io/region=${REGION}" \
         "topology.kubernetes.io/zone=${ZONEID}" \
+        "topology.csi.vmware.com/k8s-region=${REGION}" \
+        "topology.csi.vmware.com/k8s-zone=${ZONEID}" \
         "worker=true" \
         --overwrite
 fi

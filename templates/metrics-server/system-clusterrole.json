@@ -1,15 +1,15 @@
 {
-    "apiVersion": "rbac.authorization.k8s.io/v1",
-    "kind": "ClusterRole",
-    "metadata": {
-        "name": "system:metrics-server"
-    },
-    "rules": [
-        {
-            "apiGroups": [
-                ""
-            ],
-            "resources": [
+	"apiVersion": "rbac.authorization.k8s.io/v1",
+	"kind": "ClusterRole",
+	"metadata": {
+		"name": "system:metrics-server"
+	},
+	"rules": [
+		{
+			"apiGroups": [
+				""
+			],
+			"resources": [
 				"nodes/metrics"
 			],
 			"verbs": [
@@ -21,14 +21,14 @@
 				""
 			],
 			"resources": [
-                "pods",
+				"pods",
 				"nodes"
-            ],
-            "verbs": [
-                "get",
-                "list",
-                "watch"
-            ]
-        }
-    ]
+			],
+			"verbs": [
+				"get",
+				"list",
+				"watch"
+			]
+		}
+	]
 }

@@ -59,7 +59,7 @@ You must also install the following tools
 ||gsed|
 ||gbase64|
 
-First step is to fill a file named **aws.defs** in the bin directory with the values needed
+First step is to fill a file named **vars.defs** in the bin directory with the values needed
 
 ```
 # AWS account identity
@@ -148,7 +148,7 @@ During the process the script will create many files located in
 | **Flags to set some location informations** |
 | `--configuration-location=<path>`| Specify where configuration will be stored  | .|
 | `--ssl-location=<path>`| Specify where the etc/ssl dir is stored  | ./etc/ssl |
-| `--aws-defs=<path>`| Specify the AWS defintions file  | ./bin/aws.defs|
+| `--aws-defs=<path>`| Specify the AWS defintions file  | ./bin/vars.defs|
 | **Flags to set AWS informations** |
 | `--profile` | AWS Profile to use | $AWS_PROFILE env vars |
 | `--route53-profile` | Specify AWS profile for route53 | $AWS_PROFILE_ROUTE53 env vars |

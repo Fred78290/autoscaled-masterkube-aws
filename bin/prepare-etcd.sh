@@ -1,9 +1,8 @@
 #!/bin/bash
 CURDIR=$(dirname $0)
 
-source ${CURDIR}/common.sh
+source $CURDIR/common.sh
 
-NODEGROUP_NAME="aws-ca-k8s"
 
 TEMP=$(getopt -o c:g: --long node-group:,cluster-nodes: -n "$0" -- "$@")
 
@@ -122,6 +121,8 @@ pushd ${TARGET_CLUSTER_LOCATION}/etcd &>/dev/null
 cfssl gencert -initca ca-csr.json | cfssljson -bare ./ssl/ca
 cfssl gencert -ca=./ssl/ca.pem -ca-key=./ssl/ca-key.pem -config=ca-config.json -profile=kubernetes etcd-csr.json | cfssljson -bare ./ssl/etcd
 popd &>/dev/null
+
+echo "Create etcd config files"
 
 for INDEX in ${!ETCDHOSTS[@]}
 do
