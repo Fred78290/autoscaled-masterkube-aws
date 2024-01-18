@@ -193,7 +193,6 @@ During the process the script will create many files located in
 | `--nginx-machine=<value>` | The instance type name to deploy front nginx node | t3a.small/t4g.small |
 | `--ssh-private-key=<value>`  | Alternate ssh key file |~/.ssh/id_rsa|
 | `--transport=<value>`  | Override the transport to be used between autoscaler and aws-autoscaler [**tcp**\|**linux**] |linux|
-| `--cloud-provider=<value>`  | Set cloud provider, (aws | external | none) | external |
 | `--node-group=<value>` | The name of kubernetes node group  | aws-ca-k8s |
 | `--cni-plugin-version=<value>`  | CNI version |v1.1.1|
 | `--cni-plugin=<value>`  | Override CNI plugin [**aws**\|**calico**\|**flannel**\|**weave**\|**romana**]|aws|
@@ -241,8 +240,7 @@ create-masterkube \
     --private-subnet-id=subnet-ABC,subnet-DEF,subnet-GHI \
     --private-sg-id=sg-5678 \
     --arch=arm64 \
-    --cni-plugin=aws \
-    --cloud-provider=external
+    --cni-plugin=aws
 ```
 
 ## Machine type

@@ -89,7 +89,7 @@
 							"--dst-etcd-ssl-dir=/etc/etcd/ssl",
 							"--config=/etc/cluster/autoscaler.json",
 							"--machines=/etc/cluster/machines.json",
-							"--provider=${SCHEME}",
+							"--provider=${PLATEFORM}",
 							"--provider-congig=/etc/cluster/provider.json",
 							"--save=/var/run/cluster-autoscaler/state.json",
 							"--log-level=info"
@@ -115,6 +115,11 @@
 							{
 								"name": "kubernetes-pki",
 								"mountPath": "/etc/kubernetes/pki"
+							},
+							{
+								"name": "autoscaler-utility-cert",
+								"mountPath": "/etc/ssl/certs/autoscaler-utility",
+								"readOnly": true
 							}
 						]
 					},
@@ -199,6 +204,13 @@
 						"name": "etcd-ssl",
 						"secret": {
 							"secretName": "etcd-ssl",
+							"defaultMode": 416
+						}
+					},
+					{
+						"name": "autoscaler-utility-cert",
+						"secret": {
+							"secretName": "autoscaler-utility-cert",
 							"defaultMode": 416
 						}
 					},

@@ -22,4 +22,3 @@ helm upgrade --install aws-ebs-csi-driver aws-ebs-csi-driver/aws-ebs-csi-driver 
     --kubeconfig=${TARGET_CLUSTER_LOCATION}/config \
     --namespace kube-system \
     -f ${ETC_DIR}/aws-ebs-csi.yaml 
-    
