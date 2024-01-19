@@ -24,21 +24,21 @@ The process install also following kubernetes components
 ## Mono AZ single plane exposed on internet
 
 <p align="center">
-<img src="./images/cluster-mono-az-0.svg" width="512" alt="cert-manager-webhook-godaddy project logo" />
+<img src="./medias/cluster-mono-az-0.svg" width="512" alt="cert-manager-webhook-godaddy project logo" />
 <br>
-<img src="./images/cluster-mono-az-1.svg" width="512" alt="cert-manager-webhook-godaddy project logo" />
+<img src="./medias/cluster-mono-az-1.svg" width="512" alt="cert-manager-webhook-godaddy project logo" />
 </p>
 
 ## Multi AZ HA Cluster exposed on internet
 
 <p align="center">
-<img src="./images/hacluster-multi-az-0.svg" width="1024" alt="cert-manager-webhook-godaddy project logo" />
+<img src="./medias/hacluster-multi-az-0.svg" width="1024" alt="cert-manager-webhook-godaddy project logo" />
 <br>
-<img src="./images/hacluster-multi-az-1.svg" width="1024" alt="cert-manager-webhook-godaddy project logo" />
+<img src="./medias/hacluster-multi-az-1.svg" width="1024" alt="cert-manager-webhook-godaddy project logo" />
 <br>
-<img src="./images/hacluster-multi-az-2.svg" width="1024" alt="cert-manager-webhook-godaddy project logo" />
+<img src="./medias/hacluster-multi-az-2.svg" width="1024" alt="cert-manager-webhook-godaddy project logo" />
 <br>
-<img src="./images/hacluster-multi-az-3.svg" width="1024" alt="cert-manager-webhook-godaddy project logo" />
+<img src="./medias/hacluster-multi-az-3.svg" width="1024" alt="cert-manager-webhook-godaddy project logo" />
 </p>
 
 ## Create the masterkube
